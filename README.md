@@ -1,5 +1,7 @@
 # phantom-secure-connector
 
+[![CI](https://github.com/markl-a/phantom-secure-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/markl-a/phantom-secure-connector/actions/workflows/ci.yml)
+
 > **PHI 去識別化 + 時序異常偵測 + 合規檢查 + 紅藍隊模擬 + MCP bridge — 一站式
 > phantom-mesh 安全套件**,跨產業招聘對齊(資安 / 金融 / 醫材 / AI safety),
 > 一個 install 取代四家 vendor。
