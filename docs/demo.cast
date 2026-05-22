@@ -1,0 +1,9 @@
+{"version":3,"term":{"cols":80,"rows":24},"timestamp":1779466466,"idle_time_limit":2.0,"command":"/tmp/demo-scripts/secure-connector.sh","title":"phantom-secure-connector Tier 1 demo (PHI redaction)","env":{"SHELL":"/bin/zsh"}}
+[0.518, "o", "$ python -c \"from phi_redactor.redactor import redact; ...\"\r\n"]
+[1.013, "o", "# Input (synthetic sample, no real patient):\r\n"]
+[0.000, "o", "#   \"Patient Mark Lai 1990-01-15 born; MRN A123456; mobile 0912-345-678; email mark@example.com\"\r\n"]
+[1.009, "o", "\r\n"]
+[0.053, "o", "redacted: Patient Mark Lai [DOB_ISO_1] born; MRN A123456; mobile [TW_PHONE_M_1]; email [EMAIL_1]\r\n\r\nmap     : RedactionMap(items={'[DOB_ISO_1]': '1990-01-15', '[TW_PHONE_M_1]': '0912-345-678', '[EMAIL_1]': 'mark@example.com'}, counters={'DOB_ISO': 1, 'TW_PHONE_M': 1, 'EMAIL': 1})\r\n"]
+[1.014, "o", "\r\n"]
+[0.000, "o", "# phantom-secure-connector: PHI types (DOB, TW_PHONE, EMAIL) recognized + tokenized\r\n"]
+[2.011, "x", "0"]
