@@ -1,0 +1,97 @@
+# HIPAA Privacy Rule — 18 identifiers (Safe Harbor de-identification standard).
+# Each rule has: id, label, regex.
+# Reference: 45 CFR 164.514(b)(2)(i).
+
+standard = "HIPAA"
+version = "2026-05"
+
+[[rule]]
+id = "hipaa_01_name"
+label = "Personal name (heuristic)"
+# Heuristic: two consecutive capitalised words. NER catches more in Tier 2.
+regex = "\\b[A-Z][a-z]{1,20}\\s+[A-Z][a-z]{1,20}\\b"
+
+[[rule]]
+id = "hipaa_02_geo"
+label = "Geographic subdivision smaller than state"
+regex = "\\b\\d{5}(?:-\\d{4})?\\b"  # US ZIP
+
+[[rule]]
+id = "hipaa_03_date_birth"
+label = "Date of birth"
+regex = "\\b(?:19|20)\\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\\d|3[01])\\b"
+
+[[rule]]
+id = "hipaa_04_phone"
+label = "Telephone number"
+regex = "\\b(?:\\+1[- ]?)?(?:\\(?\\d{3}\\)?[- ]?)\\d{3}[- ]?\\d{4}\\b"
+
+[[rule]]
+id = "hipaa_05_fax"
+label = "Fax number"
+regex = "\\bfax[:\\s]+\\d[\\d -]{6,}\\b"
+
+[[rule]]
+id = "hipaa_06_email"
+label = "Email address"
+regex = "\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b"
+
+[[rule]]
+id = "hipaa_07_ssn"
+label = "Social Security Number"
+regex = "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+
+[[rule]]
+id = "hipaa_08_mrn"
+label = "Medical record number"
+regex = "\\bMRN[-_]?[A-Z0-9]{4,12}\\b"
+
+[[rule]]
+id = "hipaa_09_health_plan"
+label = "Health plan beneficiary number"
+regex = "\\bHP[-_]?\\d{6,12}\\b"
+
+[[rule]]
+id = "hipaa_10_account"
+label = "Account number"
+regex = "\\bACCT[-_]?\\d{6,}\\b"
+
+[[rule]]
+id = "hipaa_11_license"
+label = "Certificate / license number"
+regex = "\\b(?:LIC|CERT)[-_]?[A-Z0-9]{4,}\\b"
+
+[[rule]]
+id = "hipaa_12_vehicle"
+label = "Vehicle identifier (VIN)"
+regex = "\\b[A-HJ-NPR-Z0-9]{17}\\b"
+
+[[rule]]
+id = "hipaa_13_device"
+label = "Device identifier / serial"
+regex = "\\b(?:SN|S/N)[-_:\\s]?[A-Z0-9]{6,}\\b"
+
+[[rule]]
+id = "hipaa_14_url"
+label = "Web URL"
+regex = "\\bhttps?://[^\\s]+\\b"
+
+[[rule]]
+id = "hipaa_15_ipv4"
+label = "IP address"
+regex = "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b"
+
+[[rule]]
+id = "hipaa_16_biometric"
+label = "Biometric identifier (placeholder regex)"
+regex = "\\bBIO[-_]?[A-Z0-9]{6,}\\b"
+
+[[rule]]
+id = "hipaa_17_photo"
+label = "Photographic image reference"
+regex = "\\b[\\w/_.-]+\\.(?:jpe?g|png|tiff?)\\b"
+
+[[rule]]
+id = "hipaa_18_other"
+label = "Other unique identifying code"
+regex = "\\b(?:UID|EMP)[-_]?[A-Z0-9]{6,}\\b"

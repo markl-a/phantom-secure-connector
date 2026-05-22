@@ -1,0 +1,50 @@
+# GDPR personal-data categories (Article 4(1), Article 9 special categories).
+# Tier 1 regex pass; Tier 2 adds NER.
+
+standard = "GDPR"
+version = "2026-05"
+
+[[rule]]
+id = "gdpr_email"
+label = "Email address"
+regex = "\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b"
+
+[[rule]]
+id = "gdpr_phone_intl"
+label = "International phone number"
+regex = "\\+\\d{1,3}[- ]?\\d{2,4}[- ]?\\d{3,4}[- ]?\\d{3,4}"
+
+[[rule]]
+id = "gdpr_iban"
+label = "IBAN bank account"
+regex = "\\b[A-Z]{2}\\d{2}[A-Z0-9]{10,30}\\b"
+
+[[rule]]
+id = "gdpr_credit_card"
+label = "Credit card number"
+regex = "\\b(?:\\d[ -]?){15,18}\\d\\b"
+
+[[rule]]
+id = "gdpr_ipv4"
+label = "IP address (online identifier per Recital 30)"
+regex = "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b"
+
+[[rule]]
+id = "gdpr_passport_eu"
+label = "EU passport number (heuristic)"
+regex = "\\b[A-Z]{1,2}\\d{6,9}\\b"
+
+[[rule]]
+id = "gdpr_special_health_kw"
+label = "Special category — health keyword"
+regex = "(?i)\\b(?:diagnosis|prescription|HIV|cancer|diabetes|血壓|血糖)\\b"
+
+[[rule]]
+id = "gdpr_special_religion"
+label = "Special category — religion keyword"
+regex = "(?i)\\b(?:Christian|Muslim|Jewish|Buddhist|Hindu|atheist)\\b"
+
+[[rule]]
+id = "gdpr_special_political"
+label = "Special category — political-opinion keyword"
+regex = "(?i)\\b(?:Democrat|Republican|Labour|Tory|KMT|DPP)\\b"
