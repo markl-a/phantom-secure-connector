@@ -1,46 +1,44 @@
 # phantom-secure-connector
 
-> **PHI de-identification + time-series anomaly detection + compliance checks + red/blue team simulation + MCP bridge — the phantom-mesh security suite, one install.**
+> **PHI 去識別化 + 時序異常偵測 + 合規檢查 + 紅藍隊模擬 + MCP bridge — 一站式
+> phantom-mesh 安全套件**,跨產業招聘對齊(資安 / 金融 / 醫材 / AI safety),
+> 一個 install 取代四家 vendor。
 
-**Status:** alpha (Tier 1 initial dev, 2026-05-22). Smoke-tested locally; not for production PHI workloads yet.
-**License:** Apache-2.0
-**Spec:** `/Users/marklight/Documents/215jseeking/docs/projects/04-phantom-secure-connector.md`
-**Sister project:** [phantom-mesh](https://github.com/markl-a/phantom-mesh) — distributed agent runtime; this connector secures its data plane.
+![status: alpha · Tier 1](https://img.shields.io/badge/status-alpha%20%C2%B7%20Tier%201-orange)
+![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
+[![phantom-mesh ecosystem](https://img.shields.io/badge/ecosystem-phantom--mesh-purple)](https://github.com/markl-a/phantom-mesh)
 
----
+## 一句話 niche
 
-## One-liner
+> "Sensitive data comes in safely, trusted tools go out safely, behaviour is
+> continuously red/blue-team verified — for phantom-mesh."
 
-> "Sensitive data comes in safely, trusted tools go out safely, behaviour is continuously red/blue-team verified — for phantom-mesh."
+Presidio 只做 de-id;NeMo Guardrails 只做 LLM 輸出守門;Garak 只做 red-team;
+HIPAA 合規 scanner 是另一坨 SaaS。**phantom-secure-connector 是第一個把這四
+塊組合在一起 + 加 MCP bridge 的 phantom 套件** — 中文 (台灣身分證 / 健保
+卡 / 病歷號) 與西方識別符 (SSN / DOB / MRN / Email) 一次處理。
 
-## Five built-in modules
+## Status (2026-05-22)
 
-| Module | Purpose | Tier 1 status |
-|---|---|---|
-| `phi_redactor/` | Regex-first PHI detection + reversible/irreversible redaction (TW + western identifiers) | usable today |
-| `anomaly_detector/` | Generic time-series anomaly detection (port of AHI Detection v2 core) | usable today, stdlib-only |
-| `compliance_checker/` | Scan CSV/JSON against HIPAA / GDPR rule files | usable today |
-| `secops_simulator/` | Red/blue-team prompt-injection harness (wraps phantom-secops) | stub |
-| `mcp_bridge/` | Expose phantom tools to Claude Desktop / Cursor via MCP | stub server (3 tools) |
+- ✅ **Tier 1 shipped** (stdlib-only,本機可跑 pytest):
+  - `phi_redactor/` — TW 身分證 + NHI + MRN + SSN + Email + DOB regex,
+    可逆 / 不可逆 mode + reversible mapping。
+  - `anomaly_detector/` — 通用時序異常偵測(AHI Detection v2 核心移植)。
+  - `compliance_checker/` — CSV/JSON 對 HIPAA / GDPR 規則檔掃描。
+  - `mcp_bridge/` — Claude Desktop / Cursor 可掛 3 個 phantom tool stub。
+- 🟡 **Tier 2 next**: LLM-augmented PHI catches(regex 抓不到的邊界 case via
+  phantom-mesh provider trait)、`secops_simulator/` 從 stub 升級(現只是
+  介面,要接 phantom-secops 真實 prompt-injection harness)。
+- 🟡 **Tier 3** (M2-M3, ~2026-07): AHI 真實資料 vs Nassi et al. 2021
+  baseline 驗證、MCP server polish 對齊最新 spec、HealthKit / Garmin
+  Connect ingest pipeline (redact → encrypt → FTS5)。
 
-## Why this exists (hiring & business angle)
-
-Hiring coverage — broadest of the seven phantom-mesh projects:
-
-- **Trend Micro** — security AI / SOC tooling
-- **CTBC / Cathay / Fubon** — financial-services compliance
-- **Medical-device companies** — HIPAA + de-id pipeline
-- **ITRI Biomed** — health-tech research
-- **Anthropic** — safety / MCP ecosystem
-
-Niche: **the first one-stop "PHI + anomaly + compliance + red-team + MCP" phantom plugin**. The four building blocks normally sit in four separate vendors.
-
-## Quick start
+## 30-second quickstart
 
 ```bash
 git clone https://github.com/markl-a/phantom-secure-connector
 cd phantom-secure-connector
-python3 -m pytest -v       # all tests, stdlib-only deps
+python3 -m pytest -v       # all tests, stdlib-only
 ```
 
 ### PHI redactor
@@ -48,9 +46,9 @@ python3 -m pytest -v       # all tests, stdlib-only deps
 ```python
 from phi_redactor.redactor import redact
 
-text = "張三 1990/01/15 出生, MRN-A123456, contact alice@example.com SSN 123-45-6789"
+text = "張三 1990/01/15 出生, MRN-A123456, alice@example.com SSN 123-45-6789"
 clean, mapping = redact(text, mode="replace")
-# clean → "張三 [DOB_1] 出生, [MRN_1], contact [EMAIL_1] [SSN_1]"
+# clean   → "張三 [DOB_1] 出生, [MRN_1], [EMAIL_1] [SSN_1]"
 # mapping → reversible map back to originals
 ```
 
@@ -58,10 +56,8 @@ clean, mapping = redact(text, mode="replace")
 
 ```python
 from anomaly_detector.detector import detect
-
-series = [(t, value), ...]   # list[(timestamp, float)]
-result = detect(series, window=7)
-# result → list[(timestamp, value, is_anomaly, score)]
+result = detect([(t, value), ...], window=7)
+# → list[(timestamp, value, is_anomaly, score)]
 ```
 
 ### Compliance checker
@@ -72,23 +68,68 @@ python3 -m compliance_checker.checker --standard hipaa path/to/data.csv
 
 ### MCP bridge
 
-See [`mcp_bridge/README.md`](mcp_bridge/README.md) for Claude Desktop config wiring.
+See [`mcp_bridge/README.md`](mcp_bridge/README.md) for Claude Desktop config.
 
-## NOT doing (boundary)
+## Architecture (within phantom-mesh ecosystem)
 
-- Not a medical device. Supportive, not diagnostic.
-- Not a network firewall / IDS. We operate at the application / data layer.
-- Not a SOC2 certificate. Assists audits; does not replace them.
+phantom-secure-connector 是 **P4 加密為先** 的資料平面守門員 — 任何進
+phantom-mesh memory 的東西先過 PHI redactor;任何離開的工具呼叫過 MCP
+bridge 並 log 給 anomaly_detector 做行為偵測。
 
-## Roadmap (post Tier 1)
+```
+External data (HealthKit / CSV / chat)
+       ↓
+   phi_redactor  ←──  TW 身分證 / NHI / MRN / SSN / DOB / Email
+       ↓
+   compliance_checker  ←── HIPAA / GDPR rule files
+       ↓
+   phantom-mesh FTS5  (encrypted at rest)
+       ↓
+   mcp_bridge  ←──  Claude Desktop / Cursor
+       ↓
+   anomaly_detector  ←──  time-series 行為基線
+       ↑
+   secops_simulator  ──→  red/blue prompt-injection 持續驗證
+```
 
-- LLM-augmented PHI catches (edge cases regex misses) via phantom-mesh provider trait
-- Real AHI dataset validation against Nassi et al. 2021 baseline
-- MCP server polish to match Anthropic's evolving MCP spec
-- HealthKit / Garmin Connect ingest pipeline (redact → encrypt → FTS5)
+Pillars served: **P4** (加密為先,主要)、**P1** (跨平台 — stdlib-only 確
+保 Mac / Windows / Linux 一致行為)、**P2** (分身連線 — MCP bridge 是
+phantom-mesh 與外部 IDE 的安全橋)。
+
+## Target users (recruiter / co-builder angle)
+
+跨產業最廣的一個 phantom-mesh satellite:
+
+- **趨勢 Trend Micro** — security AI / SOC tooling、prompt-injection 防護
+- **中信 / 國泰 / 富邦** — 金融合規 + PHI/PII de-id 管線
+- **醫材公司 / 工研院生醫** — HIPAA + de-id + AHI 異常偵測背景
+- **Anthropic** — MCP ecosystem + AI safety / red-team
+- **Co-builders**: 想要 self-hosted Presidio + Garak + NeMo Guardrails 三合一
+  的 AI infra 工程師。
+
+NOT doing(邊界):非醫材(supportive,not diagnostic);非網路防火牆 / IDS
+(資料/應用層而已);非 SOC2 證書(輔助稽核,不取代)。
+
+## Roadmap (per master plan)
+
+- 詳細設計: [`docs/04-phantom-secure-connector.md`](docs/)
+- 七專案總圖: [phantom-mesh planning tree](https://github.com/markl-a/phantom-mesh)
+
+3-bullet:
+
+1. **M2** — LLM-augmented PHI(provider trait 接 phantom-mesh)、secops_simulator
+   從 stub 升級到真實 prompt-injection harness。
+2. **M3** — AHI 真實資料驗證、MCP polish、HealthKit/Garmin ingest。
+3. **Post-M3** — SOC2 audit-ready report 自動生成、企業版加密 KMS。
 
 ## Sources & credit
 
-- `~/Documents/GitHub/hailmary/phantom-secops/` — red/blue team simulator (referenced, not copied)
-- AHI Detection v2 research — `markl-a/ahi-cv5-report` and related repos
-- Medical RAG v1.1.0 — PHI de-id architecture (sanitized for public release)
+- `~/Documents/GitHub/hailmary/phantom-secops/` — 紅藍隊模擬器(referenced,
+  未複製)
+- AHI Detection v2 research — `markl-a/ahi-cv5-report`
+- Medical RAG v1.1.0 — PHI de-id 架構(public 版已 sanitize)
+
+## License
+
+Apache-2.0. © 2026 Mark Lai ([markl-a](https://github.com/markl-a)). See
+[LICENSE](LICENSE).
