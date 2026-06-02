@@ -8,7 +8,7 @@ Anthropic's spec stabilises.
 Tools exposed:
 - ``redact_phi``            — de-identify PHI/PII (this suite's own capability)
 - ``phantom_status``        — GET http://127.0.0.1:7878/api/status
-- ``phantom_fts5_search``   — real query over ~/.phantom-mesh/events.sqlite (fts5_events)
+- ``phantom_fts5_search``   — search via ``phantom recall`` (decrypts events/; sqlite index is dead)
 - ``phantom_event_capture`` — subprocess ``phantom event capture <text>``
 
 Driven over stdio for Claude Desktop, or imported as a library for unit tests.
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import sqlite3
 import subprocess
 import sys
 import urllib.error
@@ -31,7 +30,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from phi_redactor.redactor import redact  # noqa: E402
 
 PHANTOM_STATUS_URL = "http://127.0.0.1:7878/api/status"
-EVENTS_DB = Path.home() / ".phantom-mesh" / "events.sqlite"
 
 
 @dataclass
@@ -54,29 +52,30 @@ def phantom_status(_args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def phantom_fts5_search(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Full-text search over phantom's real event index (~/.phantom-mesh/events.sqlite)."""
+    """Search phantom's event timeline via `phantom recall --json` (decrypts events/).
+
+    NOTE: events.sqlite/fts5_events is dead scaffolding (contentless, never synced);
+    `phantom recall` is the supported read interface. Empty query → recent listing.
+    Each result: {event_id, timestamp, kind, summary}.
+    """
     query = args.get("query", "")
     limit = int(args.get("limit", 10))
-    if not query:
-        return {"ok": False, "error": "missing 'query' argument"}
-    if not EVENTS_DB.exists():
-        return {"ok": True, "query": query, "results": [], "note": f"no event store at {EVENTS_DB}"}
+    if not shutil.which("phantom"):
+        return {"ok": True, "query": query, "results": [], "note": "phantom not on PATH"}
     try:
-        con = sqlite3.connect(f"file:{EVENTS_DB}?mode=ro", uri=True)
-        try:
-            rows = con.execute(
-                "SELECT event_id, content FROM fts5_events WHERE fts5_events MATCH ? LIMIT ?",
-                (query, limit),
-            ).fetchall()
-        finally:
-            con.close()
-        return {
-            "ok": True,
-            "query": query,
-            "results": [{"event_id": r[0], "content": r[1]} for r in rows],
-        }
-    except sqlite3.Error as exc:
-        return {"ok": False, "error": str(exc), "db": str(EVENTS_DB)}
+        proc = subprocess.run(
+            ["phantom", "recall", query, "--json", "--limit", str(limit)],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"ok": False, "error": str(exc)}
+    if proc.returncode != 0:
+        return {"ok": False, "error": proc.stderr.strip()[:200] or "phantom recall failed"}
+    try:
+        results = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "error": f"bad recall json: {exc}"}
+    return {"ok": True, "query": query, "results": results}
 
 
 def redact_phi(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -125,7 +124,7 @@ DEFAULT_TOOLS: List[Tool] = [
     ),
     Tool(
         name="phantom_fts5_search",
-        description="Full-text search over the phantom event index (Tier 2).",
+        description="Search phantom's event timeline via phantom recall (decrypts events/).",
         input_schema={
             "type": "object",
             "properties": {"query": {"type": "string"}},
