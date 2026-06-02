@@ -11,10 +11,11 @@ if str(ROOT) not in sys.path:
 from mcp_bridge.server import PhantomMCPServer  # noqa: E402
 
 
-def test_three_tools_registered():
+def test_tools_registered():
     srv = PhantomMCPServer()
     names = srv.tool_names()
     assert set(names) == {
+        "redact_phi",
         "phantom_status",
         "phantom_fts5_search",
         "phantom_event_capture",
@@ -27,7 +28,7 @@ def test_tools_list_response_shape():
     assert resp["id"] == 1
     assert "result" in resp
     tools = resp["result"]["tools"]
-    assert len(tools) == 3
+    assert len(tools) == 4
     for t in tools:
         assert "name" in t and "description" in t and "inputSchema" in t
 
@@ -42,7 +43,7 @@ def test_call_unknown_tool_returns_error():
     assert resp["error"]["code"] == -32601
 
 
-def test_fts5_placeholder_returns_canned():
+def test_fts5_search_real_index():
     srv = PhantomMCPServer()
     resp = srv.handle({
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -51,8 +52,20 @@ def test_fts5_placeholder_returns_canned():
     r = resp["result"]
     assert r["ok"] is True
     assert r["query"] == "hi"
-    assert r["results"] == []
-    assert "Tier 1 placeholder" in r["note"]
+    assert isinstance(r["results"], list)  # empty if store empty/absent — both fine
+
+
+def test_redact_phi_masks_pii():
+    srv = PhantomMCPServer()
+    resp = srv.handle({
+        "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+        "params": {"name": "redact_phi",
+                   "arguments": {"text": "mail alice@example.com SSN 123-45-6789"}},
+    })
+    r = resp["result"]
+    assert r["ok"] is True
+    assert "alice@example.com" not in r["redacted"]
+    assert r["count"] >= 2
 
 
 def test_phantom_status_handles_unreachable():

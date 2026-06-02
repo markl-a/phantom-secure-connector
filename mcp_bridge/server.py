@@ -1,31 +1,37 @@
-"""Minimal MCP-style server stub exposing 3 phantom-mesh tools.
+"""MCP-style server exposing the phantom security suite over JSON-RPC.
 
-This is a Tier 1 skeleton: we model the MCP request/response surface
-(tools/list, tools/call) over plain JSON-RPC so the wiring can be verified
-without a hard dependency on ``mcp`` or ``fastmcp``. When Anthropic's spec
-stabilises we will swap the transport for the official SDK.
+Tier 1 skeleton: we model the MCP request/response surface (tools/list,
+tools/call) over plain JSON-RPC so the wiring can be verified without a hard
+dependency on ``mcp``/``fastmcp``. Swap transport for the official SDK once
+Anthropic's spec stabilises.
 
 Tools exposed:
+- ``redact_phi``            — de-identify PHI/PII (this suite's own capability)
 - ``phantom_status``        — GET http://127.0.0.1:7878/api/status
-- ``phantom_fts5_search``   — placeholder (returns canned result; Tier 2 hits
-                              the real FTS5 index via phantom HTTP API)
+- ``phantom_fts5_search``   — real query over ~/.phantom-mesh/events.sqlite (fts5_events)
 - ``phantom_event_capture`` — subprocess ``phantom event capture <text>``
 
-The server can be driven over stdio for Claude Desktop or imported as a
-library for unit tests.
+Driven over stdio for Claude Desktop, or imported as a library for unit tests.
 """
 from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+# Make the sibling phi_redactor importable when run as `python mcp_bridge/server.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from phi_redactor.redactor import redact  # noqa: E402
+
 PHANTOM_STATUS_URL = "http://127.0.0.1:7878/api/status"
+EVENTS_DB = Path.home() / ".phantom-mesh" / "events.sqlite"
 
 
 @dataclass
@@ -48,14 +54,39 @@ def phantom_status(_args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def phantom_fts5_search(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Tier 1 placeholder. Tier 2: call phantom HTTP search endpoint."""
+    """Full-text search over phantom's real event index (~/.phantom-mesh/events.sqlite)."""
     query = args.get("query", "")
-    return {
-        "ok": True,
-        "query": query,
-        "results": [],
-        "note": "Tier 1 placeholder — wire to phantom FTS5 in Tier 2",
-    }
+    limit = int(args.get("limit", 10))
+    if not query:
+        return {"ok": False, "error": "missing 'query' argument"}
+    if not EVENTS_DB.exists():
+        return {"ok": True, "query": query, "results": [], "note": f"no event store at {EVENTS_DB}"}
+    try:
+        con = sqlite3.connect(f"file:{EVENTS_DB}?mode=ro", uri=True)
+        try:
+            rows = con.execute(
+                "SELECT event_id, content FROM fts5_events WHERE fts5_events MATCH ? LIMIT ?",
+                (query, limit),
+            ).fetchall()
+        finally:
+            con.close()
+        return {
+            "ok": True,
+            "query": query,
+            "results": [{"event_id": r[0], "content": r[1]} for r in rows],
+        }
+    except sqlite3.Error as exc:
+        return {"ok": False, "error": str(exc), "db": str(EVENTS_DB)}
+
+
+def redact_phi(args: Dict[str, Any]) -> Dict[str, Any]:
+    """De-identify PHI/PII in text via phi_redactor — the suite's own capability."""
+    text = args.get("text", "")
+    mode = args.get("mode", "replace")
+    if not text:
+        return {"ok": False, "error": "missing 'text' argument"}
+    clean, mapping = redact(text, mode=mode)
+    return {"ok": True, "redacted": clean, "count": len(mapping.items), "by_type": mapping.counters}
 
 
 def phantom_event_capture(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -111,6 +142,19 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["text"],
         },
         handler=phantom_event_capture,
+    ),
+    Tool(
+        name="redact_phi",
+        description="De-identify PHI/PII in text (the security suite's own tool).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "mode": {"type": "string", "enum": ["replace", "mask"]},
+            },
+            "required": ["text"],
+        },
+        handler=redact_phi,
     ),
 ]
 

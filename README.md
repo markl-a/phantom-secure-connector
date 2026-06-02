@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/markl-a/phantom-secure-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/markl-a/phantom-secure-connector/actions/workflows/ci.yml)
 
-> **PHI 去識別化 + 時序異常偵測 + 合規檢查 + 紅藍隊模擬 + MCP bridge — 一站式
+> **PHI 去識別化 + 合規檢查 + 紅藍隊模擬 + MCP bridge — 一站式
 > phantom-mesh 安全套件**,跨產業招聘對齊(資安 / 金融 / 醫材 / AI safety),
 > 一個 install 取代四家 vendor。
 
@@ -39,7 +39,6 @@ HIPAA 合規 scanner 是另一坨 SaaS。**phantom-secure-connector 是第一個
 - ✅ **Tier 1 shipped** (stdlib-only,本機可跑 pytest):
   - `phi_redactor/` — TW 身分證 + NHI + MRN + SSN + Email + DOB regex,
     可逆 / 不可逆 mode + reversible mapping。
-  - `anomaly_detector/` — 通用時序異常偵測(AHI Detection v2 核心移植)。
   - `compliance_checker/` — CSV/JSON 對 HIPAA / GDPR 規則檔掃描。
   - `mcp_bridge/` — Claude Desktop / Cursor 可掛 3 個 phantom tool stub。
 - 🟡 **Tier 2 next**: LLM-augmented PHI catches(regex 抓不到的邊界 case via
@@ -68,14 +67,6 @@ clean, mapping = redact(text, mode="replace")
 # mapping → reversible map back to originals
 ```
 
-### Anomaly detector
-
-```python
-from anomaly_detector.detector import detect
-result = detect([(t, value), ...], window=7)
-# → list[(timestamp, value, is_anomaly, score)]
-```
-
 ### Compliance checker
 
 ```bash
@@ -90,7 +81,7 @@ See [`mcp_bridge/README.md`](mcp_bridge/README.md) for Claude Desktop config.
 
 phantom-secure-connector 是 **P4 加密為先** 的資料平面守門員 — 任何進
 phantom-mesh memory 的東西先過 PHI redactor;任何離開的工具呼叫過 MCP
-bridge 並 log 給 anomaly_detector 做行為偵測。
+bridge。(時序異常偵測 anomaly_detector 已移至 phantom-companion 的健康數據平面。)
 
 ```
 External data (HealthKit / CSV / chat)
@@ -101,9 +92,7 @@ External data (HealthKit / CSV / chat)
        ↓
    phantom-mesh FTS5  (encrypted at rest)
        ↓
-   mcp_bridge  ←──  Claude Desktop / Cursor
-       ↓
-   anomaly_detector  ←──  time-series 行為基線
+   mcp_bridge  ←──  Claude Desktop / Cursor (露 redact_phi / fts5_search / event_capture)
        ↑
    secops_simulator  ──→  red/blue prompt-injection 持續驗證
 ```

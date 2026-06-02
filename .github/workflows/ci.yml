@@ -13,4 +13,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install pytest requests
-      - run: pytest phi_redactor/ anomaly_detector/ compliance_checker/ mcp_bridge/ -ra -q
+      - run: pytest phi_redactor/ compliance_checker/ mcp_bridge/ secops_simulator/ -ra -q
