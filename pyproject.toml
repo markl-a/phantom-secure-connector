@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phantom-secure-connector"
+version = "0.1.0"
+description = "PHI de-identification + compliance + red/blue-team sim + MCP bridge (client & server) for the phantom-mesh security suite. Stdlib-only."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+authors = [{ name = "markl-a" }]
+keywords = ["phi", "redaction", "hipaa", "mcp", "security", "phantom-mesh"]
+
+# Stdlib-only by design — no runtime dependencies.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/markl-a/phantom-secure-connector"
+
+[project.scripts]
+# Outbound MCP client with the PHI-redaction + allowlist security gate.
+secure-mcp = "mcp_bridge.client:main"
+phantom-secure-connector = "mcp_bridge.client:main"
+
+[tool.setuptools]
+packages = ["phi_redactor", "mcp_bridge", "compliance_checker", "secops_simulator"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "phi_redactor/tests",
+    "mcp_bridge/tests",
+    "compliance_checker/tests",
+    "secops_simulator/tests",
+]
