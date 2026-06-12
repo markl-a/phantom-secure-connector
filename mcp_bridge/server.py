@@ -9,7 +9,7 @@ Tools exposed:
 - ``redact_phi``            — de-identify PHI/PII (this suite's own capability)
 - ``phantom_status``        — GET http://127.0.0.1:7878/api/status
 - ``phantom_fts5_search``   — search via ``phantom recall`` (decrypts events/; sqlite index is dead)
-- ``phantom_event_capture`` — subprocess ``phantom event capture <text>``
+- ``phantom_event_capture`` — subprocess ``phantom event capture --text <text>``
 
 Driven over stdio for Claude Desktop, or imported as a library for unit tests.
 """
@@ -65,7 +65,7 @@ def phantom_fts5_search(args: Dict[str, Any]) -> Dict[str, Any]:
     try:
         proc = subprocess.run(
             ["phantom", "recall", query, "--json", "--limit", str(limit)],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, encoding="utf-8", errors="replace", timeout=15,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return {"ok": False, "error": str(exc)}
@@ -89,7 +89,7 @@ def redact_phi(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def phantom_event_capture(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Run ``phantom event capture <text>`` if the phantom binary is in PATH."""
+    """Run ``phantom event capture --text <text>`` if the phantom binary is in PATH."""
     text = args.get("text", "")
     if not text:
         return {"ok": False, "error": "missing 'text' argument"}
@@ -98,9 +98,10 @@ def phantom_event_capture(args: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": "phantom binary not in PATH"}
     try:
         proc = subprocess.run(
-            [phantom_bin, "event", "capture", text],
+            [phantom_bin, "event", "capture", "--text", text],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=False,
         )
