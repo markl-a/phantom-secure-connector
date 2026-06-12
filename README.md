@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/markl-a/phantom-secure-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/markl-a/phantom-secure-connector/actions/workflows/ci.yml)
 
-> **PHI 去識別化 + 合規檢查 + 紅藍隊模擬 + MCP bridge — 一站式
-> phantom-mesh 安全套件**,跨產業招聘對齊(資安 / 金融 / 醫材 / AI safety),
-> 一個 install 取代四家 vendor。
+> **PHI 去識別化 + 合規檢查 + MCP bridge,加紅藍隊模擬橋接 — phantom-mesh
+> 安全套件(紅藍隊目前橋接 phantom-secops,Tier 2 內建)**,跨產業招聘對齊
+> (資安 / 金融 / 醫材 / AI safety),目標是把三到四家 vendor 的能力收斂到一處。
 
 ![status: alpha · Tier 1](https://img.shields.io/badge/status-alpha%20%C2%B7%20Tier%201-orange)
 ![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -30,8 +30,9 @@ Self-hosted on purpose — no upload to asciinema.org, no third-party tracking.
 > continuously red/blue-team verified — for phantom-mesh."
 
 Presidio 只做 de-id;NeMo Guardrails 只做 LLM 輸出守門;Garak 只做 red-team;
-HIPAA 合規 scanner 是另一坨 SaaS。**phantom-secure-connector 是第一個把這四
-塊組合在一起 + 加 MCP bridge 的 phantom 套件** — 中文 (台灣身分證 / 健保
+HIPAA 合規 scanner 是另一坨 SaaS。**phantom-secure-connector 把 de-id + 合規
++ MCP bridge 組合在一起,並橋接 phantom-secops 的 red-team(輸出守門為 Tier 2
+路線)的 phantom 套件** — 中文 (台灣身分證 / 健保
 卡 / 病歷號) 與西方識別符 (SSN / DOB / MRN / Email) 一次處理。
 
 ## Status (2026-05-22)
