@@ -17,7 +17,7 @@ def test_tools_registered():
     assert set(names) == {
         "redact_phi",
         "phantom_status",
-        "phantom_fts5_search",
+        "phantom_recall_search",
         "phantom_event_capture",
     }
 
@@ -43,11 +43,13 @@ def test_call_unknown_tool_returns_error():
     assert resp["error"]["code"] == -32601
 
 
-def test_fts5_search_real_index():
+def test_recall_search_degrades_without_phantom():
+    # `phantom recall` is the real read path; with no phantom binary on PATH the
+    # handler returns ok=True with an empty result list (graceful degradation).
     srv = PhantomMCPServer()
     resp = srv.handle({
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-        "params": {"name": "phantom_fts5_search", "arguments": {"query": "hi"}},
+        "params": {"name": "phantom_recall_search", "arguments": {"query": "hi"}},
     })
     r = resp["result"]
     assert r["ok"] is True

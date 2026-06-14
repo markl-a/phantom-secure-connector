@@ -1,0 +1,4 @@
+record_id,patient_name,dob,ssn,mrn,email,phone,note
+1,Alex Carter,1990-01-15,123-45-6789,MRN-A123456,alex.carter@example.com,0912-345-678,Follow-up scheduled; SSN 123-45-6789 on file.
+2,Jordan Lee,1985-07-22,987-65-4321,MRN-B654321,jordan.lee@example.org,0922-111-222,Prescription renewed; diagnosis noted.
+3,Sam Rivera,2001-12-03,555-44-3333,MRN-C778899,sam.rivera@example.net,02-2345-6789,No PHI in this clinical comment field.

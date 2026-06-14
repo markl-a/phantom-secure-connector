@@ -1,5 +1,13 @@
 # ④ phantom-secure-connector
 
+> **This is the design/vision spec, not a status report.** What actually ships
+> today (Tier 1) is: `phi_redactor/`, `compliance_checker/`, `mcp_bridge/`
+> (server + gated client), and a `secops_simulator/` bridge stub. The
+> `anomaly-detector/` described below was moved to phantom-companion and is
+> **not** in this repo; the "FTS5" mentions refer to dead scaffolding (see the
+> root README — the real read path is `phantom recall`). See the repo README
+> for the honest Tier 1 surface.
+
 > **PHI 去識別 + 時序異常偵測 + 合規 check + 紅藍隊模擬 + MCP bridge,一個 phantom-mesh 安全套件全包**
 > 招聘覆蓋最廣的項目(銀行 / 醫材 / 趨勢 / 工研院 / Anthropic 都看)
 

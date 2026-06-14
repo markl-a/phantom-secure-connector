@@ -1,21 +1,27 @@
 # 2026-05-22 — Tier 1 initial dev
 
-## What shipped
+> **Correction (updated since):** this log originally listed an
+> `anomaly_detector/` module as shipped. It was later moved out to
+> phantom-companion and is **not** in this repo — the table and Tier 2 notes
+> below have been corrected. The `mcp_bridge` server now exposes **4** tools
+> (`redact_phi`, `phantom_status`, `phantom_recall_search`,
+> `phantom_event_capture`) and ships an outbound MCP **client** with a
+> PHI-redaction + allowlist gate, so it is no longer a pure stub.
 
-| Module | LOC (approx) | Status | Tests |
-|---|---:|---|---:|
-| `phi_redactor/` | ~190 | usable today on real PHI text | 9 |
-| `anomaly_detector/` | ~170 | usable today, stdlib-only | 5 |
-| `compliance_checker/` | ~250 + 2 rule files | usable today on CSV/JSON | 5 |
-| `secops_simulator/` | ~120 | stub wrapping phantom-secops | 2 |
-| `mcp_bridge/` | ~190 | stub JSON-RPC over stdio, 3 tools | 7 |
+## What shipped (current state)
 
-Total: ~920 LOC source + ~250 LOC tests, stdlib-only on Python 3.10+.
+| Module | Status | Tests |
+|---|---|---:|
+| `phi_redactor/` | usable today on PHI text (regex; no NER for names) | 9 |
+| `compliance_checker/` | usable today on CSV/JSON | 6 |
+| `secops_simulator/` | bridge/stub wrapping a local phantom-secops clone | 2 |
+| `mcp_bridge/` | JSON-RPC over stdio; server (4 tools) + gated client | 13 |
+
+Total: 30 tests, stdlib-only on Python 3.10+.
 
 ## Smoke test command
 
 ```bash
-cd /Users/marklight/Documents/GitHub/phantom-secure-connector
 python3 -m pytest -v
 ```
 
@@ -30,14 +36,6 @@ python3 -m pytest -v
   feature flag for users who can't ship LLM calls.
 - **Differential privacy mode.** For aggregate exports (e.g. cohort stats),
   add Laplace noise to bucket counts.
-
-### anomaly_detector
-- **Real AHI dataset validation.** Hook the Nassi et al. 2021 dataset and
-  reproduce the published Pearson r baseline; add a regression test that
-  fails if our generic algorithm drops below 80% of that baseline.
-- **STL decomposition.** MAD is great for stationary series, weak for
-  seasonal ones (sleep_score has weekly cycles). Add a Tier 2 STL path.
-- **Multivariate.** Today each series is independent; AHI v2 fuses HR + SpO2.
 
 ### compliance_checker
 - **HIPAA name detection.** Today regex `[A-Z][a-z]+ [A-Z][a-z]+` over-flags
@@ -56,8 +54,10 @@ python3 -m pytest -v
 
 ### mcp_bridge
 - **Switch to official `mcp` Python SDK** once the spec stabilises.
-- **Implement `phantom_fts5_search`** against the real phantom HTTP search
-  endpoint (today returns a canned empty result).
+- **`phantom_recall_search`** already calls `phantom recall --json` (the real,
+  supported read path that decrypts `events/`). There is no live sqlite/FTS5
+  index to wire up; the earlier "implement FTS5 search" TODO was based on dead
+  scaffolding and is dropped.
 - **Capability scoping.** Today the bridge trusts whatever is on stdio. Add
   per-tool capability negotiation aligned with phantom-mesh's existing cap
   system.

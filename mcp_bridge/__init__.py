@@ -1,21 +1,29 @@
-"""MCP bridge — expose phantom-mesh tools to Claude Desktop / Cursor.
+"""MCP bridge — both ends of an MCP connection for the phantom suite.
 
-Tier 1 ships a stdlib-only MCP-style server skeleton. The protocol surface is
-intentionally small (three tools) so we can verify wiring end-to-end before
-chasing full MCP spec compliance.
+- ``server`` exposes 4 phantom tools to an MCP host (Claude Desktop / Cursor):
+  ``redact_phi``, ``phantom_status``, ``phantom_recall_search``,
+  ``phantom_event_capture``.
+- ``client`` connects OUT to an external MCP server and gates every tool call
+  through a PHI-redaction guardrail + allowlist.
+
+Stdlib-only, hand-rolled JSON-RPC over stdio (no ``mcp``/``fastmcp`` dependency
+yet) so the wiring can be verified end-to-end before chasing full spec
+compliance.
 """
 from .server import (
     PhantomMCPServer,
     Tool,
+    redact_phi,
     phantom_status,
-    phantom_fts5_search,
+    phantom_recall_search,
     phantom_event_capture,
 )
 
 __all__ = [
     "PhantomMCPServer",
     "Tool",
+    "redact_phi",
     "phantom_status",
-    "phantom_fts5_search",
+    "phantom_recall_search",
     "phantom_event_capture",
 ]

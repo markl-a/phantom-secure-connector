@@ -6,10 +6,15 @@ dependency on ``mcp``/``fastmcp``. Swap transport for the official SDK once
 Anthropic's spec stabilises.
 
 Tools exposed:
-- ``redact_phi``            — de-identify PHI/PII (this suite's own capability)
-- ``phantom_status``        — GET http://127.0.0.1:7878/api/status
-- ``phantom_fts5_search``   — search via ``phantom recall`` (decrypts events/; sqlite index is dead)
-- ``phantom_event_capture`` — subprocess ``phantom event capture --text <text>``
+- ``redact_phi``             — de-identify PHI/PII (this suite's own capability)
+- ``phantom_status``         — GET http://127.0.0.1:7878/api/status
+- ``phantom_recall_search``  — search via ``phantom recall`` (decrypts events/)
+- ``phantom_event_capture``  — subprocess ``phantom event capture --text <text>``
+
+Note on storage: ``phantom recall`` is the real, supported read path — it
+decrypts the per-event ``events/`` store. There is NO live sqlite/FTS5 index in
+this path (an ``events.sqlite``/``fts5_events`` table exists in phantom-mesh
+history as contentless scaffolding that was never synced; do not rely on it).
 
 Driven over stdio for Claude Desktop, or imported as a library for unit tests.
 """
@@ -51,12 +56,12 @@ def phantom_status(_args: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc), "url": PHANTOM_STATUS_URL}
 
 
-def phantom_fts5_search(args: Dict[str, Any]) -> Dict[str, Any]:
+def phantom_recall_search(args: Dict[str, Any]) -> Dict[str, Any]:
     """Search phantom's event timeline via `phantom recall --json` (decrypts events/).
 
-    NOTE: events.sqlite/fts5_events is dead scaffolding (contentless, never synced);
-    `phantom recall` is the supported read interface. Empty query → recent listing.
-    Each result: {event_id, timestamp, kind, summary}.
+    `phantom recall` is the supported read interface (it decrypts the per-event
+    `events/` store). There is no live sqlite/FTS5 index behind this call.
+    Empty query → recent listing. Each result: {event_id, timestamp, kind, summary}.
     """
     query = args.get("query", "")
     limit = int(args.get("limit", 10))
@@ -124,14 +129,14 @@ DEFAULT_TOOLS: List[Tool] = [
         handler=phantom_status,
     ),
     Tool(
-        name="phantom_fts5_search",
-        description="Search phantom's event timeline via phantom recall (decrypts events/).",
+        name="phantom_recall_search",
+        description="Search phantom's event timeline via `phantom recall` (decrypts events/).",
         input_schema={
             "type": "object",
             "properties": {"query": {"type": "string"}},
             "required": ["query"],
         },
-        handler=phantom_fts5_search,
+        handler=phantom_recall_search,
     ),
     Tool(
         name="phantom_event_capture",

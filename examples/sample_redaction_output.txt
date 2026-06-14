@@ -1,0 +1,38 @@
+phantom-secure-connector — sample PHI-redaction output
+======================================================
+
+Generated from examples/sample_phi.csv (fully synthetic — no real patient data).
+Reproduce with:  python3 examples/redact_sample.py
+
+--- record_id=1 ---
+  input         : Patient Alex Carter 1990-01-15 born; MRN-A123456; mobile 0912-345-678; email alex.carter@example.com; Follow-up scheduled; SSN 123-45-6789 on file.
+  replace mode  : Patient Alex Carter [DOB_ISO_1] born; [MRN_1]; mobile [TW_PHONE_M_1]; email [EMAIL_1]; Follow-up scheduled; SSN [SSN_1] on file.
+  mask mode     : Patient Alex Carter ********** born; ***********; mobile ************; email ***********************; Follow-up scheduled; SSN *********** on file.
+  reversible map:
+      [DOB_ISO_1] -> 1990-01-15
+      [MRN_1] -> MRN-A123456
+      [TW_PHONE_M_1] -> 0912-345-678
+      [EMAIL_1] -> alex.carter@example.com
+      [SSN_1] -> 123-45-6789
+
+--- record_id=2 ---
+  input         : Patient Jordan Lee 1985-07-22 born; MRN-B654321; mobile 0922-111-222; email jordan.lee@example.org; Prescription renewed; diagnosis noted.
+  replace mode  : Patient Jordan Lee [DOB_ISO_1] born; [MRN_1]; mobile [TW_PHONE_M_1]; email [EMAIL_1]; Prescription renewed; diagnosis noted.
+  mask mode     : Patient Jordan Lee ********** born; ***********; mobile ************; email **********************; Prescription renewed; diagnosis noted.
+  reversible map:
+      [DOB_ISO_1] -> 1985-07-22
+      [MRN_1] -> MRN-B654321
+      [TW_PHONE_M_1] -> 0922-111-222
+      [EMAIL_1] -> jordan.lee@example.org
+
+--- record_id=3 ---
+  input         : Patient Sam Rivera 2001-12-03 born; MRN-C778899; mobile 02-2345-6789; email sam.rivera@example.net; No PHI in this clinical comment field.
+  replace mode  : Patient Sam Rivera [DOB_ISO_1] born; [MRN_1]; mobile [TW_PHONE_L_1]; email [EMAIL_1]; No PHI in this clinical comment field.
+  mask mode     : Patient Sam Rivera ********** born; ***********; mobile ************; email **********************; No PHI in this clinical comment field.
+  reversible map:
+      [DOB_ISO_1] -> 2001-12-03
+      [MRN_1] -> MRN-C778899
+      [TW_PHONE_L_1] -> 02-2345-6789
+      [EMAIL_1] -> sam.rivera@example.net
+
+Note (honest scope): personal NAMES are NOT redacted by the regex pass — that needs NER and is documented Tier 2 work. Structured PHI (DOB, MRN, phone, email, SSN, TW national ID / NHI, IPv4, credit-card) is covered.
