@@ -136,7 +136,11 @@ def _walk_matches(text: str) -> List[Tuple[int, int, str, str]]:
     return spans
 
 
-def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
+def redact(
+    text: str,
+    mode: str = "replace",
+    mapping: "RedactionMap | None" = None,
+) -> Tuple[str, RedactionMap]:
     """Redact PHI in ``text``.
 
     Parameters
@@ -146,6 +150,16 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
     mode : {"replace", "mask"}
         - "replace" → tokenise e.g. ``[SSN_1]`` and return reversible map.
         - "mask"    → overwrite with ``*`` of equal length; map is empty.
+    mapping : RedactionMap, optional
+        Reuse an existing map ACROSS several ``redact`` calls so identical PHI
+        gets the same token and DISTINCT PHI gets distinct tokens
+        (``[SSN_1]``, ``[SSN_2]``…). Callers that redact many independent
+        strings (e.g. dict keys + values in one payload) pass a shared map to
+        avoid token collisions that would otherwise clobber data. When a
+        shared map is supplied, per-string round-trip spans are NOT recorded
+        (``restore`` is a single-string operation); the contract is "no two
+        distinct PHI values share a token", which is what the wire payload
+        needs.
 
     Returns
     -------
@@ -163,7 +177,9 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
             "callers must decode/serialise to str before redaction"
         )
 
-    mapping = RedactionMap()
+    shared = mapping is not None
+    if mapping is None:
+        mapping = RedactionMap()
     spans = _walk_matches(text)
     if not spans:
         return text, mapping
@@ -180,7 +196,10 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
             out.append(token)
             # Record where this token lands in the clean output so restore can
             # splice the original back without a collision-prone str.replace.
-            mapping.record_span(out_len, out_len + len(token), original)
+            # Only meaningful for the single-string round-trip; a shared map
+            # spans multiple independent strings, so we skip recording then.
+            if not shared:
+                mapping.record_span(out_len, out_len + len(token), original)
             out_len += len(token)
         else:  # mask
             mapping.tally(label, original)  # count even though it's irreversible

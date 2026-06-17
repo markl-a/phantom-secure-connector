@@ -43,7 +43,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Make the sibling phi_redactor importable when run as a module or a script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from phi_redactor.redactor import redact  # noqa: E402
+from phi_redactor.redactor import RedactionMap, redact  # noqa: E402
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -77,26 +77,54 @@ def redact_arguments(args: Dict[str, Any]) -> Tuple[Dict[str, Any], int, Dict[st
     Returns ``(clean_args, total_phi_items, by_type_counters)``. PHI is
     tokenised (``mode="replace"``) so the structure is preserved but no raw
     PHI value survives into the outbound payload.
+
+    A SINGLE shared ``RedactionMap`` is used across the whole tree so that
+    identical PHI maps to the same token everywhere and DISTINCT PHI maps to
+    distinct tokens (``[SSN_1]``, ``[SSN_2]``…). This matters for dict keys:
+    without a shared map, two different PHI keys would both tokenise to
+    ``[SSN_1]`` and the second would clobber the first in the dict, silently
+    dropping a value from the outbound payload. The tally is taken from the
+    shared map's ``counters`` (the single source of truth) — accurate even
+    under repeated/identical PHI.
     """
-    total = 0
-    by_type: Dict[str, int] = {}
+    mapping = RedactionMap()
+
+    def _redact_str(value: str) -> str:
+        clean, _ = redact(value, mode="replace", mapping=mapping)
+        return clean
 
     def _walk(value: Any) -> Any:
-        nonlocal total
         if isinstance(value, str):
-            clean, mapping = redact(value, mode="replace")
-            if mapping.items:
-                total += len(mapping.items)
-                for label, n in mapping.counters.items():
-                    by_type[label] = by_type.get(label, 0) + n
-            return clean
+            return _redact_str(value)
         if isinstance(value, dict):
-            return {k: _walk(v) for k, v in value.items()}
+            # Redact PHI in KEYS too — a key can carry a patient identifier and
+            # would otherwise cross the process boundary unredacted. Non-string
+            # keys (ints, etc.) pass through untouched. The shared map keeps
+            # distinct PHI keys distinct, so no key collision drops a value.
+            #
+            # FAIL CLOSED on key collision: in the rare case two distinct source
+            # keys redact to the same key (e.g. a pure-PHI key that tokenises to
+            # exactly "[SSN_1]" alongside a literal "[SSN_1]" key), silently
+            # keeping the last write would DROP an argument from the outbound
+            # payload. A security gate must error rather than lose data.
+            out_dict: Dict[Any, Any] = {}
+            for k, v in value.items():
+                new_k = _redact_str(k) if isinstance(k, str) else k
+                if new_k in out_dict:
+                    raise MCPClientError(
+                        "PHI redaction produced a key collision "
+                        f"({new_k!r}); refusing to silently drop an argument. "
+                        "Rename the conflicting key before sending."
+                    )
+                out_dict[new_k] = _walk(v)
+            return out_dict
         if isinstance(value, list):
             return [_walk(v) for v in value]
         return value
 
     clean_args = _walk(args)
+    by_type: Dict[str, int] = dict(mapping.counters)
+    total = sum(by_type.values())
     return clean_args, total, by_type
 
 
