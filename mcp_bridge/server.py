@@ -32,6 +32,19 @@ from phi_redactor.redactor import redact  # noqa: E402
 PHANTOM_STATUS_URL = "http://127.0.0.1:7878/api/status"
 
 
+def _safe(value: Any) -> str:
+    """Mask PHI in any diagnostic string before it leaves the process.
+
+    Subprocess error text (``str(TimeoutExpired)`` includes the full command
+    line, which embeds the caller's ``query``/``text`` — potential PHI) and a
+    child's ``stderr`` can echo PHI. Every such string crosses the wire to the
+    MCP client, so the error/diagnostic surface must be masked exactly like the
+    primary payload. Mask mode is irreversible — appropriate for a one-way log
+    line."""
+    masked, _ = redact(str(value), mode="mask")
+    return masked
+
+
 @dataclass
 class Tool:
     name: str
@@ -68,13 +81,15 @@ def phantom_fts5_search(args: Dict[str, Any]) -> Dict[str, Any]:
             capture_output=True, encoding="utf-8", errors="replace", timeout=15,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return {"ok": False, "error": str(exc)}
+        # str(TimeoutExpired) embeds the full command line (incl. the query,
+        # which may be PHI); child stderr can echo PHI too. Mask both.
+        return {"ok": False, "error": _safe(exc)}
     if proc.returncode != 0:
-        return {"ok": False, "error": proc.stderr.strip()[:200] or "phantom recall failed"}
+        return {"ok": False, "error": _safe(proc.stderr.strip()[:200]) or "phantom recall failed"}
     try:
         results = json.loads(proc.stdout or "[]")
     except json.JSONDecodeError as exc:
-        return {"ok": False, "error": f"bad recall json: {exc}"}
+        return {"ok": False, "error": f"bad recall json: {_safe(exc)}"}
     return {"ok": True, "query": query, "results": results}
 
 
@@ -84,6 +99,12 @@ def redact_phi(args: Dict[str, Any]) -> Dict[str, Any]:
     mode = args.get("mode", "replace")
     if not text:
         return {"ok": False, "error": "missing 'text' argument"}
+    if mode not in ("replace", "mask"):
+        # A bad mode from a remote tools/call must not raise (which would crash
+        # the serve loop) — return a clean, readable error instead. Do NOT echo
+        # the raw mode value: a buggy/hostile caller could smuggle PHI into the
+        # mode field, and the error message crosses the wire.
+        return {"ok": False, "error": "mode must be 'replace' or 'mask'"}
     clean, mapping = redact(text, mode=mode)
     # Count from `counters`, not `len(items)`: mask mode is irreversible and
     # leaves `items` empty, but the audit metrics must still be truthful.
@@ -108,14 +129,20 @@ def phantom_event_capture(args: Dict[str, Any]) -> Dict[str, Any]:
             timeout=5,
             check=False,
         )
+        # stderr is a pure diagnostic surface — phantom may echo the captured
+        # "--text <PHI>" there on error; mask it before it crosses the wire.
+        # stdout is the tool's legitimate result returned to the same caller
+        # who supplied the text, so it is left intact.
         return {
             "ok": proc.returncode == 0,
             "returncode": proc.returncode,
             "stdout": proc.stdout,
-            "stderr": proc.stderr,
+            "stderr": _safe(proc.stderr),
         }
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
-        return {"ok": False, "error": str(exc)}
+        # str(TimeoutExpired) includes the full argv — here "--text <PHI>".
+        # Mask before it crosses the wire.
+        return {"ok": False, "error": _safe(exc)}
 
 
 # ----------------------------- server core ----------------------------------
@@ -202,17 +229,41 @@ class PhantomMCPServer:
             args = params.get("arguments", {}) or {}
             tool = self.find(name)
             if tool is None:
+                # Do NOT echo the caller-controlled tool name (even masked):
+                # a static message can never leak PHI. The valid tool set is
+                # discoverable via tools/list.
                 return {
                     "jsonrpc": "2.0",
                     "id": rid,
-                    "error": {"code": -32601, "message": f"unknown tool {name!r}"},
+                    "error": {"code": -32601, "message": "unknown tool requested"},
                 }
-            result = tool.handler(args)
+            # Guard the handler: a single bad call (bad args, an unexpected
+            # handler bug) must become a JSON-RPC error, never an exception that
+            # escapes serve_stdio and tears down the server for every later
+            # caller. -32603 = JSON-RPC "Internal error".
+            #
+            # PHI safety: the exception message may echo the handler's input,
+            # and input may contain PHI. The error crosses the wire to the
+            # client, so the message MUST be redacted before it leaves. We keep
+            # the exception type (debuggable) and run the detail through our own
+            # masker so no raw PHI escapes via the error channel.
+            try:
+                result = tool.handler(args)
+            except Exception as exc:  # noqa: BLE001 — fail-soft at the bridge edge
+                safe_detail = _safe(exc)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rid,
+                    "error": {
+                        "code": -32603,
+                        "message": f"{type(exc).__name__}: {safe_detail}",
+                    },
+                }
             return {"jsonrpc": "2.0", "id": rid, "result": result}
         return {
             "jsonrpc": "2.0",
             "id": rid,
-            "error": {"code": -32601, "message": f"unknown method {method!r}"},
+            "error": {"code": -32601, "message": "unknown method requested"},
         }
 
     def serve_stdio(self) -> None:
