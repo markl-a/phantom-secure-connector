@@ -87,3 +87,144 @@ def test_scan_records_clean_data_no_violations():
     records = [{"col": "perfectly safe text"}, {"col": "no PHI here"}]
     vio = scan_records(records, rs)
     assert vio == []
+
+
+# --------------------------- CLI exit-code contract --------------------------
+from compliance_checker.checker import _cli  # noqa: E402
+
+
+def test_cli_returns_1_on_violations(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("email\nalice@example.com\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "Violations: 1" in out
+
+
+def test_cli_returns_0_on_clean(tmp_path: Path):
+    csv_path = tmp_path / "clean.csv"
+    csv_path.write_text("col\nperfectly safe text\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(csv_path)])
+    assert rc == 0
+
+
+def test_cli_json_output_is_valid(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    # --show-matches to inspect the raw matched value in the structured record.
+    rc = _cli(["--standard", "hipaa", "--json", "--show-matches", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert isinstance(parsed, list) and parsed
+    assert parsed[0]["rule_id"] == "hipaa_07_ssn"
+    assert parsed[0]["matched"] == "123-45-6789"
+
+
+def test_cli_unknown_standard_exits_cleanly_no_traceback(tmp_path: Path, capsys):
+    """An unknown --standard must produce a clean error + nonzero exit, NOT an
+    uncaught FileNotFoundError traceback dumped at the user."""
+    csv_path = tmp_path / "x.csv"
+    csv_path.write_text("a\nb\n", encoding="utf-8")
+    rc = _cli(["--standard", "does_not_exist", str(csv_path)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "does_not_exist" in err or "unknown" in err.lower()
+
+
+def test_cli_missing_file_exits_cleanly(tmp_path: Path, capsys):
+    rc = _cli(["--standard", "hipaa", str(tmp_path / "nope.csv")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert err.strip()  # a human-readable message, not empty
+
+
+def test_cli_unsupported_filetype_exits_cleanly(tmp_path: Path, capsys):
+    bad = tmp_path / "data.txt"
+    bad.write_text("hello", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(bad)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "unsupported" in err.lower() or ".txt" in err
+
+
+# ----------------- PHI-safe export: redact matched by default ----------------
+from compliance_checker.checker import Violation  # noqa: E402
+
+
+def test_violation_to_dict_redacts_matched_by_default():
+    """A compliance VIOLATION report feeds downstream (logs, tickets, the
+    phantom ecosystem). The raw matched PHI must NOT be the default export —
+    HIPAA 'minimum necessary' / GDPR data minimisation. to_dict() masks the
+    matched value by default; the raw value is opt-in."""
+    v = Violation(
+        rule_id="hipaa_07_ssn", rule_label="SSN", standard="HIPAA",
+        location="row=0 col=ssn", matched="123-45-6789",
+    )
+    d = v.to_dict()
+    assert d["matched"] != "123-45-6789"
+    assert "123-45-6789" not in json.dumps(d)
+    # Fully masked, length-preserved — no partial fragments survive.
+    assert d["matched"] == "*" * len("123-45-6789")
+    # The structure / non-PHI fields are intact.
+    assert d["rule_id"] == "hipaa_07_ssn"
+    assert d["location"] == "row=0 col=ssn"
+
+
+def test_violation_export_fully_masks_composite_match_no_fragment_leak():
+    """A composite rule match (e.g. a URL embedding an email) must be FULLY
+    masked in the default export — not partially redacted, which would leave
+    the domain/path scaffolding (still identifying) exposed. The whole matched
+    span is masked. Regression for the partial-mask leak.
+    """
+    v = Violation(
+        rule_id="hipaa_14_url", rule_label="URL", standard="HIPAA",
+        location="row=0 col=link",
+        matched="https://portal.example/u/alice@example.com/record",
+    )
+    d = v.to_dict()
+    blob = json.dumps(d)
+    for fragment in ("portal", "example", "record", "alice", "https"):
+        assert fragment not in blob
+    assert set(d["matched"]) == {"*"}
+
+
+def test_violation_to_dict_can_reveal_raw_on_explicit_opt_in():
+    v = Violation(
+        rule_id="hipaa_07_ssn", rule_label="SSN", standard="HIPAA",
+        location="row=0 col=ssn", matched="123-45-6789",
+    )
+    d = v.to_dict(show_matches=True)
+    assert d["matched"] == "123-45-6789"
+
+
+def test_cli_json_redacts_matched_by_default(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", "--json", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    # No raw PHI in the default JSON export.
+    assert "123-45-6789" not in out
+    parsed = json.loads(out)
+    assert parsed[0]["rule_id"] == "hipaa_07_ssn"
+
+
+def test_cli_json_show_matches_reveals_raw(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", "--json", "--show-matches", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "123-45-6789" in out
+
+
+def test_cli_text_redacts_matched_by_default(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    # The human-readable report also must not print raw PHI by default.
+    assert "123-45-6789" not in out

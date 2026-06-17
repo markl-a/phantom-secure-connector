@@ -10,7 +10,7 @@ Design:
 
 Coverage (Tier 1):
 - TW national ID  (身分證)   ``[A-Z][12][0-9]{8}``
-- TW NHI card     (健保卡)   12-hex digits
+- TW NHI card     (健保卡)   12 numeric digits
 - TW phone         09xx-xxx-xxx and 02-xxxx-xxxx style
 - US SSN          ``\\d{3}-\\d{2}-\\d{4}``
 - Email
@@ -33,7 +33,11 @@ from typing import Dict, List, Pattern, Tuple
 
 # Each tuple: (label, compiled_regex). Ordering = priority.
 PATTERNS: List[Tuple[str, Pattern[str]]] = [
-    ("TW_NHI",   re.compile(r"\b[0-9A-Fa-f]{12}\b")),
+    # TW NHI (健保卡) card numbers are 12 NUMERIC digits. The old hex class
+    # ``[0-9A-Fa-f]`` produced false positives on ordinary 12-char hex words
+    # (e.g. ``deadbeefcafe``), polluting the audit tally with non-PHI. Digits
+    # only — no real NHI is missed (NHI is numeric), false positives removed.
+    ("TW_NHI",   re.compile(r"\b\d{12}\b")),
     ("SSN",      re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
     ("CREDIT",   re.compile(r"\b(?:\d[ -]?){15,18}\d\b")),
     ("MRN",      re.compile(r"\bMRN[-_]?[A-Z0-9]{4,12}\b", re.IGNORECASE)),
@@ -56,6 +60,11 @@ class RedactionMap:
     # Per-label set of originals already tallied — used by irreversible mask
     # mode to count uniques without storing a reverse mapping.
     _seen: Dict[str, set] = field(default_factory=dict, repr=False)
+    # Exact replacement spans in the CLEAN output: (out_start, out_end, original).
+    # Span-based restore is byte-exact and immune to the token-collision bug
+    # where a naive str.replace would rewrite a literal "[SSN_1]" that happened
+    # to already exist in the source text.
+    _spans: List[Tuple[int, int, str]] = field(default_factory=list, repr=False)
 
     def issue(self, label: str, original: str) -> str:
         # Re-use the same token for the same original (idempotent within a doc).
@@ -80,13 +89,34 @@ class RedactionMap:
         seen.add(original)
         self.counters[label] = self.counters.get(label, 0) + 1
 
+    def record_span(self, out_start: int, out_end: int, original: str) -> None:
+        """Record the exact span a token occupies in the CLEAN output so
+        ``restore`` can splice the original back byte-exactly."""
+        self._spans.append((out_start, out_end, original))
+
     def restore(self, redacted: str) -> str:
-        """Inverse op — useful for round-trip tests."""
-        out = redacted
-        # Replace longest tokens first to avoid prefix collisions.
+        """Inverse op — reconstruct the original text byte-exactly.
+
+        Uses recorded output spans (not ``str.replace``) so a literal token
+        that pre-existed in the source — e.g. the user wrote ``[SSN_1]`` — is
+        never mistaken for an issued token and corrupted. Falls back to the
+        legacy longest-token replace only when no spans were recorded (e.g. a
+        map built by hand in older callers / tests).
+        """
+        if self._spans:
+            out: List[str] = []
+            cursor = 0
+            for start, end, original in sorted(self._spans):
+                out.append(redacted[cursor:start])
+                out.append(original)
+                cursor = end
+            out.append(redacted[cursor:])
+            return "".join(out)
+        # Legacy fallback: longest tokens first to avoid prefix collisions.
+        out_text = redacted
         for token in sorted(self.items, key=len, reverse=True):
-            out = out.replace(token, self.items[token])
-        return out
+            out_text = out_text.replace(token, self.items[token])
+        return out_text
 
 
 def _walk_matches(text: str) -> List[Tuple[int, int, str, str]]:
@@ -106,7 +136,11 @@ def _walk_matches(text: str) -> List[Tuple[int, int, str, str]]:
     return spans
 
 
-def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
+def redact(
+    text: str,
+    mode: str = "replace",
+    mapping: "RedactionMap | None" = None,
+) -> Tuple[str, RedactionMap]:
     """Redact PHI in ``text``.
 
     Parameters
@@ -116,6 +150,16 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
     mode : {"replace", "mask"}
         - "replace" → tokenise e.g. ``[SSN_1]`` and return reversible map.
         - "mask"    → overwrite with ``*`` of equal length; map is empty.
+    mapping : RedactionMap, optional
+        Reuse an existing map ACROSS several ``redact`` calls so identical PHI
+        gets the same token and DISTINCT PHI gets distinct tokens
+        (``[SSN_1]``, ``[SSN_2]``…). Callers that redact many independent
+        strings (e.g. dict keys + values in one payload) pass a shared map to
+        avoid token collisions that would otherwise clobber data. When a
+        shared map is supplied, per-string round-trip spans are NOT recorded
+        (``restore`` is a single-string operation); the contract is "no two
+        distinct PHI values share a token", which is what the wire payload
+        needs.
 
     Returns
     -------
@@ -123,21 +167,45 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
     """
     if mode not in ("replace", "mask"):
         raise ValueError(f"mode must be 'replace' or 'mask', got {mode!r}")
+    # Explicit, early type guard. A non-str input (None/int/dict/bytes handed
+    # in by a buggy caller) must fail loudly with a clear contract error rather
+    # than a cryptic ``re`` internal crash — and must NEVER pass through
+    # un-redacted, which could leak an unscanned object onto the wire.
+    if not isinstance(text, str):
+        raise TypeError(
+            f"redact() expects str, got {type(text).__name__}; "
+            "callers must decode/serialise to str before redaction"
+        )
 
-    mapping = RedactionMap()
+    shared = mapping is not None
+    if mapping is None:
+        mapping = RedactionMap()
     spans = _walk_matches(text)
     if not spans:
         return text, mapping
 
     out: List[str] = []
     cursor = 0
+    out_len = 0  # running length of the CLEAN output, for span recording
     for s, e, label, original in spans:
-        out.append(text[cursor:s])
+        prefix = text[cursor:s]
+        out.append(prefix)
+        out_len += len(prefix)
         if mode == "replace":
-            out.append(mapping.issue(label, original))
+            token = mapping.issue(label, original)
+            out.append(token)
+            # Record where this token lands in the clean output so restore can
+            # splice the original back without a collision-prone str.replace.
+            # Only meaningful for the single-string round-trip; a shared map
+            # spans multiple independent strings, so we skip recording then.
+            if not shared:
+                mapping.record_span(out_len, out_len + len(token), original)
+            out_len += len(token)
         else:  # mask
             mapping.tally(label, original)  # count even though it's irreversible
-            out.append("*" * (e - s))
+            stars = "*" * (e - s)
+            out.append(stars)
+            out_len += len(stars)
         cursor = e
     out.append(text[cursor:])
     return "".join(out), mapping

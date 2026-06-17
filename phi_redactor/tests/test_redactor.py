@@ -93,3 +93,72 @@ def test_no_phi_passthrough():
     clean, m = redact(text)
     assert clean == text
     assert m.items == {}
+
+
+def test_round_trip_when_source_contains_literal_token():
+    """If the SOURCE text already contains a literal token like ``[SSN_1]``,
+    naive str.replace restore corrupts it: the pre-existing literal gets
+    rewritten into the redacted PHI value. Restore must return EXACTLY the
+    original bytes. This is a load-bearing reversibility guarantee — the README
+    advertises a reversible map, and an auditor relies on round-trip fidelity.
+    """
+    text = "Note [SSN_1] then real SSN 123-45-6789"
+    clean, m = redact(text, mode="replace")
+    # The real SSN is redacted; the pre-existing literal is left intact.
+    assert "123-45-6789" not in clean
+    # Round-trip must be byte-exact, NOT corrupt the literal [SSN_1].
+    assert m.restore(clean) == text
+
+
+def test_round_trip_with_token_lookalike_and_multiple_phi():
+    text = "ids [EMAIL_1] [SSN_2] real a@b.com SSN 999-00-1111 dup a@b.com"
+    clean, m = redact(text, mode="replace")
+    assert "a@b.com" not in clean
+    assert "999-00-1111" not in clean
+    assert m.restore(clean) == text
+
+
+def test_non_string_input_raises_typeerror_not_regex_crash():
+    """``redact`` must reject non-str input with a clear, contractual
+    ``TypeError`` — NOT a confusing ``re`` internal crash, and NEVER silently
+    pass through (which could let an un-redacted object reach the wire).
+    A connector that gets handed an int/None/dict by a buggy caller must fail
+    loudly and safely, not leak.
+    """
+    import pytest
+
+    for bad in (None, 123, 4.5, ["SSN 123-45-6789"], {"x": 1}, b"bytes"):
+        with pytest.raises(TypeError):
+            redact(bad)  # type: ignore[arg-type]
+
+
+def test_empty_string_is_clean_passthrough():
+    clean, m = redact("")
+    assert clean == ""
+    assert m.items == {}
+    assert m.counters == {}
+
+
+def test_tw_nhi_matches_12_digit_card():
+    """A real TW NHI (健保卡) card number is 12 numeric digits — it must be
+    redacted and tallied as TW_NHI."""
+    text = "健保卡 123456789012 已驗證"
+    clean, m = redact(text)
+    assert "123456789012" not in clean
+    assert "[TW_NHI_1]" in clean
+    assert m.counters.get("TW_NHI") == 1
+
+
+def test_tw_nhi_does_not_flag_hex_words_as_phi():
+    """The old ``[0-9A-Fa-f]{12}`` regex flagged ordinary 12-char hex words
+    (e.g. a git short-hash-like ``deadbeefcafe`` or a CSS-ish token) as NHI
+    PHI. That is a false positive: it pollutes the audit tally with non-PHI
+    and mis-labels harmless text. NHI cards are numeric — non-numeric hex must
+    NOT be reported as TW_NHI."""
+    for benign in ("commit deadbeefcafe landed", "token abcdefabcdef here"):
+        clean, m = redact(benign)
+        assert "TW_NHI" not in m.counters
+        # The benign hex word survives untouched (no over-redaction).
+        assert clean == benign
+
+
