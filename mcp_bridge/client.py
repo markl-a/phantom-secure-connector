@@ -330,23 +330,31 @@ def _split_server_cmd(server: str) -> List[str]:
 
     ``shlex.split`` defaults to POSIX mode, which treats ``\\`` as an escape and
     DESTROYS Windows paths (``C:\\tools\\phantom.exe`` -> ``C:toolsphantom.exe``).
-    On Windows use ``posix=False`` so backslashes survive — the repo targets
-    identical behaviour on Mac/Windows/Linux.
+    The repo targets identical behaviour on Mac/Windows/Linux.
 
-    ``posix=False`` keeps the wrapping quote characters on a quoted token (e.g.
-    ``"C:\\Program Files\\x.exe"`` stays literally quoted), which would then fail
-    as a subprocess argv element. Strip a single layer of matching wrapping
-    quotes from each token so a quoted path-with-spaces works.
+    On Windows we double the backslashes BEFORE a POSIX split, so they survive
+    as literal path separators while POSIX quoting/spaces still work correctly.
+    This beats ``posix=False`` (which leaves wrapping quotes on tokens AND
+    mis-splits an embedded quoted option value like
+    ``--config="C:\\Program Files\\cfg.json"``). Examples, all correct:
+
+        phantom mcp                                  -> [phantom, mcp]
+        C:\\tools\\phantom.exe mcp                     -> [C:\\tools\\phantom.exe, mcp]
+        "C:\\Program Files\\x.exe" mcp                 -> [C:\\Program Files\\x.exe, mcp]
+        cmd --config="C:\\Program Files\\cfg.json"     -> [cmd, --config=C:\\Program Files\\cfg.json]
+
+    KNOWN LIMITATION (intentional, not a platform claim): on Windows, wrap a
+    path-with-spaces in DOUBLE quotes. SINGLE-quoted wrapping (which PowerShell
+    does accept) is not supported here — a backslash inside a POSIX
+    single-quoted span is not unescaped, so the pre-doubling leaves it doubled.
+    Supporting it would need a full Win32 command-line parser; the connector's
+    ``--server`` is a command plus simple args, so we accept this limitation
+    rather than over-engineer. Bare paths, double-quoted paths, and
+    double-quoted option values all tokenise correctly.
     """
-    if os.name != "nt":
-        return shlex.split(server, posix=True)
-    tokens = shlex.split(server, posix=False)
-    out: List[str] = []
-    for tok in tokens:
-        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ("'", '"'):
-            tok = tok[1:-1]
-        out.append(tok)
-    return out
+    if os.name == "nt":
+        server = server.replace("\\", "\\\\")
+    return shlex.split(server, posix=True)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

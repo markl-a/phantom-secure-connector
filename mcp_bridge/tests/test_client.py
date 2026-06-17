@@ -263,6 +263,31 @@ def test_split_server_cmd_windows_quoted_path_with_spaces(monkeypatch):
     assert '"' not in out[0]
 
 
+def test_split_server_cmd_windows_quoted_option_value_with_spaces(monkeypatch):
+    """A Windows command with an embedded quoted option value that contains
+    spaces must tokenise correctly: --config="C:\\Program Files\\cfg.json"
+    stays one argv element with backslashes intact and no stray quotes.
+    Regression guard for the shlex posix/non-posix tradeoff."""
+    monkeypatch.setattr("mcp_bridge.client.os.name", "nt")
+    out = _split_server_cmd(r'cmd --config="C:\Program Files\cfg.json"')
+    assert out == ["cmd", r"--config=C:\Program Files\cfg.json"]
+
+
+def test_split_server_cmd_windows_bare_path(monkeypatch):
+    monkeypatch.setattr("mcp_bridge.client.os.name", "nt")
+    assert _split_server_cmd(r"C:\bin\phantom.exe mcp") == [r"C:\bin\phantom.exe", "mcp"]
+
+
+def test_split_server_cmd_windows_single_quote_is_known_limitation(monkeypatch):
+    """Documented limitation: a SINGLE-quoted Windows path is NOT supported on
+    nt (backslashes survive doubled). This test pins the known behaviour so a
+    future change is a conscious decision, not an accident. Use double quotes."""
+    monkeypatch.setattr("mcp_bridge.client.os.name", "nt")
+    out = _split_server_cmd(r"'C:\bin\x.exe' mcp")
+    # Backslashes come out doubled — the documented limitation.
+    assert out == [r"C:\\bin\\x.exe", "mcp"]
+
+
 # ------------------------------- CLI surface --------------------------------
 def test_main_bad_args_json_returns_2(capsys):
     rc = main(["--server", "true", "--call", "ls", "--args", "{not json}"])
