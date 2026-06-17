@@ -53,6 +53,9 @@ class RedactionMap:
 
     items: Dict[str, str] = field(default_factory=dict)
     counters: Dict[str, int] = field(default_factory=dict)
+    # Per-label set of originals already tallied — used by irreversible mask
+    # mode to count uniques without storing a reverse mapping.
+    _seen: Dict[str, set] = field(default_factory=dict, repr=False)
 
     def issue(self, label: str, original: str) -> str:
         # Re-use the same token for the same original (idempotent within a doc).
@@ -63,6 +66,19 @@ class RedactionMap:
         token = f"[{label}_{self.counters[label]}]"
         self.items[token] = original
         return token
+
+    def tally(self, label: str, original: str) -> None:
+        """Count a redacted item for reporting WITHOUT storing a reverse map.
+
+        Used by irreversible ``mask`` mode so audit metrics (``counters``)
+        stay truthful while ``items`` remains empty. Duplicates count once,
+        mirroring ``issue``'s idempotency.
+        """
+        seen = self._seen.setdefault(label, set())
+        if original in seen:
+            return
+        seen.add(original)
+        self.counters[label] = self.counters.get(label, 0) + 1
 
     def restore(self, redacted: str) -> str:
         """Inverse op — useful for round-trip tests."""
@@ -120,6 +136,7 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
         if mode == "replace":
             out.append(mapping.issue(label, original))
         else:  # mask
+            mapping.tally(label, original)  # count even though it's irreversible
             out.append("*" * (e - s))
         cursor = e
     out.append(text[cursor:])
