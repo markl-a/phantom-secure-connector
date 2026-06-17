@@ -78,10 +78,15 @@ def run_simulation(
         )
 
     # Prefer ``make`` if a Makefile exists; else look for run.sh.
+    #
+    # A ``dry_run`` is a *preview* of the intended command, so it must NOT be
+    # gated on ``make`` actually being installed (that gate broke the preview on
+    # hosts without make, e.g. Windows). The ``which`` check only matters when
+    # we are about to really execute the subprocess below.
     cmd: list[str]
     makefile = SECOPS_PATH / "Makefile"
     run_sh = SECOPS_PATH / "scripts" / "run.sh"
-    if makefile.exists() and shutil.which("make"):
+    if makefile.exists() and (dry_run or shutil.which("make")):
         cmd = ["make", "-C", str(SECOPS_PATH), "simulate",
                f"TARGET={target}"]
         if scenario:
