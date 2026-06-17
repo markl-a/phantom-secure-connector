@@ -220,8 +220,26 @@ def _cli(argv: List[str] = None) -> int:
     ap.add_argument("--json", action="store_true", help="emit JSON output")
     args = ap.parse_args(argv)
 
-    rs = load_standard(args.standard)
-    vio = scan_file(Path(args.path), rs)
+    # Fail cleanly on operator error (unknown standard, missing/unreadable
+    # file, unsupported type, malformed rule regex) — emit a one-line message
+    # to stderr and exit 2, never a raw traceback.
+    try:
+        rs = load_standard(args.standard)
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except (ValueError, KeyError, re.error) as exc:
+        print(f"error: bad rule file for {args.standard!r}: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        vio = scan_file(Path(args.path), rs)
+    except FileNotFoundError:
+        print(f"error: input file not found: {args.path}", file=sys.stderr)
+        return 2
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        print(f"error: cannot scan {args.path!r}: {exc}", file=sys.stderr)
+        return 2
 
     if args.json:
         json.dump([v.to_dict() for v in vio], sys.stdout, indent=2)

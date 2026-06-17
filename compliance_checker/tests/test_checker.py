@@ -87,3 +87,63 @@ def test_scan_records_clean_data_no_violations():
     records = [{"col": "perfectly safe text"}, {"col": "no PHI here"}]
     vio = scan_records(records, rs)
     assert vio == []
+
+
+# --------------------------- CLI exit-code contract --------------------------
+from compliance_checker.checker import _cli  # noqa: E402
+
+
+def test_cli_returns_1_on_violations(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("email\nalice@example.com\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "Violations: 1" in out
+
+
+def test_cli_returns_0_on_clean(tmp_path: Path):
+    csv_path = tmp_path / "clean.csv"
+    csv_path.write_text("col\nperfectly safe text\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(csv_path)])
+    assert rc == 0
+
+
+def test_cli_json_output_is_valid(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", "--json", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert isinstance(parsed, list) and parsed
+    assert parsed[0]["rule_id"] == "hipaa_07_ssn"
+    # No raw matched value should be absent from the structured record.
+    assert parsed[0]["matched"] == "123-45-6789"
+
+
+def test_cli_unknown_standard_exits_cleanly_no_traceback(tmp_path: Path, capsys):
+    """An unknown --standard must produce a clean error + nonzero exit, NOT an
+    uncaught FileNotFoundError traceback dumped at the user."""
+    csv_path = tmp_path / "x.csv"
+    csv_path.write_text("a\nb\n", encoding="utf-8")
+    rc = _cli(["--standard", "does_not_exist", str(csv_path)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "does_not_exist" in err or "unknown" in err.lower()
+
+
+def test_cli_missing_file_exits_cleanly(tmp_path: Path, capsys):
+    rc = _cli(["--standard", "hipaa", str(tmp_path / "nope.csv")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert err.strip()  # a human-readable message, not empty
+
+
+def test_cli_unsupported_filetype_exits_cleanly(tmp_path: Path, capsys):
+    bad = tmp_path / "data.txt"
+    bad.write_text("hello", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(bad)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "unsupported" in err.lower() or ".txt" in err
