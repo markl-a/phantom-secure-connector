@@ -204,6 +204,19 @@ def test_read_response_raises_on_closed_stdout():
         raise AssertionError("expected MCPClientError on closed stdout")
 
 
+def test_start_spawn_failure_raises_clear_error():
+    """Spawning a non-existent server binary must raise a clear MCPClientError
+    naming the failed command, not a raw OSError."""
+    client = MCPStdioClient(server_cmd=["this_binary_does_not_exist_42"])
+    try:
+        client.start()
+    except MCPClientError as exc:
+        assert "failed to spawn server" in str(exc)
+    else:  # pragma: no cover
+        client.close()
+        raise AssertionError("expected MCPClientError on spawn failure")
+
+
 def test_send_before_start_raises():
     c = MCPStdioClient(server_cmd=["true"])
     try:

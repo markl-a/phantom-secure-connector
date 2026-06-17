@@ -162,6 +162,62 @@ def test_handler_exception_becomes_jsonrpc_error_not_crash(monkeypatch):
     assert "kaboom" in resp["error"]["message"]
 
 
+def test_fts5_search_no_binary_degrades_gracefully(monkeypatch):
+    """With no phantom on PATH, fts5 search returns ok with an empty result
+    and a note — never an error/crash."""
+    import mcp_bridge.server as srv_mod
+
+    monkeypatch.setattr(srv_mod.shutil, "which", lambda _n: None)
+    out = srv_mod.phantom_fts5_search({"query": "hi"})
+    assert out["ok"] is True
+    assert out["results"] == []
+    assert "not on PATH" in out["note"]
+
+
+def test_fts5_search_nonzero_returncode_masks_stderr(monkeypatch):
+    """A nonzero `phantom recall` return masks the stderr (which can echo the
+    query) into the error."""
+    import types
+
+    import mcp_bridge.server as srv_mod
+
+    monkeypatch.setattr(srv_mod.shutil, "which", lambda _n: "/usr/bin/phantom")
+    fake = types.SimpleNamespace(returncode=2, stdout="", stderr="recall failed for SSN 123-45-6789")
+    monkeypatch.setattr(srv_mod.subprocess, "run", lambda *a, **k: fake)
+    out = srv_mod.phantom_fts5_search({"query": "SSN 123-45-6789"})
+    assert out["ok"] is False
+    assert "123-45-6789" not in json.dumps(out)
+
+
+def test_fts5_search_bad_json_masks_error(monkeypatch):
+    """Malformed JSON from `phantom recall` yields a clean error, with any PHI
+    in the decode message masked."""
+    import types
+
+    import mcp_bridge.server as srv_mod
+
+    monkeypatch.setattr(srv_mod.shutil, "which", lambda _n: "/usr/bin/phantom")
+    fake = types.SimpleNamespace(returncode=0, stdout="{not valid json", stderr="")
+    monkeypatch.setattr(srv_mod.subprocess, "run", lambda *a, **k: fake)
+    out = srv_mod.phantom_fts5_search({"query": "hi"})
+    assert out["ok"] is False
+    assert "bad recall json" in out["error"]
+
+
+def test_event_capture_no_binary():
+    """phantom_event_capture with no phantom on PATH returns a clean error."""
+    from mcp_bridge.server import phantom_event_capture
+    import mcp_bridge.server as srv_mod
+    import pytest
+
+    # Only meaningful when phantom truly isn't installed; if it is, skip.
+    if srv_mod.shutil.which("phantom"):
+        pytest.skip("phantom is installed in this environment")
+    out = phantom_event_capture({"text": "hello"})
+    assert out["ok"] is False
+    assert "not in PATH" in out["error"]
+
+
 def test_fts5_search_timeout_error_masks_phi_in_query(monkeypatch):
     """str(TimeoutExpired) embeds the full command line, which includes the
     caller's query — potential PHI. If `phantom recall` times out, the error
