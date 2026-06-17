@@ -85,7 +85,10 @@ def redact_phi(args: Dict[str, Any]) -> Dict[str, Any]:
     if not text:
         return {"ok": False, "error": "missing 'text' argument"}
     clean, mapping = redact(text, mode=mode)
-    return {"ok": True, "redacted": clean, "count": len(mapping.items), "by_type": mapping.counters}
+    # Count from `counters`, not `len(items)`: mask mode is irreversible and
+    # leaves `items` empty, but the audit metrics must still be truthful.
+    count = sum(mapping.counters.values())
+    return {"ok": True, "redacted": clean, "count": count, "by_type": mapping.counters}
 
 
 def phantom_event_capture(args: Dict[str, Any]) -> Dict[str, Any]:

@@ -68,6 +68,25 @@ def test_redact_phi_masks_pii():
     assert r["count"] >= 2
 
 
+def test_redact_phi_mask_mode_reports_count():
+    """redact_phi in mask mode must still tell the caller how much PHI it
+    stripped (count + by_type), not silently report zero. The masked output
+    has no reverse map, but the audit metrics must be truthful."""
+    srv = PhantomMCPServer()
+    resp = srv.handle({
+        "jsonrpc": "2.0", "id": 6, "method": "tools/call",
+        "params": {"name": "redact_phi",
+                   "arguments": {"text": "mail alice@example.com SSN 123-45-6789",
+                                 "mode": "mask"}},
+    })
+    r = resp["result"]
+    assert r["ok"] is True
+    assert "alice@example.com" not in r["redacted"]
+    assert "123-45-6789" not in r["redacted"]
+    assert r["count"] == 2
+    assert r["by_type"] == {"EMAIL": 1, "SSN": 1}
+
+
 def test_phantom_status_handles_unreachable():
     # In a test env there's no phantom server on :7878 — handler must degrade
     # gracefully, not raise.

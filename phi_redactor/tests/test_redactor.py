@@ -67,6 +67,19 @@ def test_mask_mode_preserves_length():
     assert m.items == {}
 
 
+def test_mask_mode_still_counts_redactions():
+    """Mask mode is irreversible (no reverse map) but must still REPORT how
+    much PHI it stripped — otherwise an auditor sees count 0 and assumes the
+    text was clean. Regression for under-reporting in mask mode."""
+    text = "SSN 123-45-6789 email a@b.com SSN 123-45-6789"
+    clean, m = redact(text, mode="mask")
+    # No reverse mapping is stored (still irreversible).
+    assert m.items == {}
+    # ...but the per-type tally is accurate. The duplicate SSN counts once,
+    # mirroring replace-mode idempotency.
+    assert m.counters == {"SSN": 1, "EMAIL": 1}
+
+
 def test_idempotent_token_for_same_value():
     # Same SSN twice → same token, not [SSN_1] + [SSN_2].
     text = "SSN 123-45-6789 again 123-45-6789."
