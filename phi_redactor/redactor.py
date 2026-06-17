@@ -10,7 +10,7 @@ Design:
 
 Coverage (Tier 1):
 - TW national ID  (身分證)   ``[A-Z][12][0-9]{8}``
-- TW NHI card     (健保卡)   12-hex digits
+- TW NHI card     (健保卡)   12 numeric digits
 - TW phone         09xx-xxx-xxx and 02-xxxx-xxxx style
 - US SSN          ``\\d{3}-\\d{2}-\\d{4}``
 - Email
@@ -33,7 +33,11 @@ from typing import Dict, List, Pattern, Tuple
 
 # Each tuple: (label, compiled_regex). Ordering = priority.
 PATTERNS: List[Tuple[str, Pattern[str]]] = [
-    ("TW_NHI",   re.compile(r"\b[0-9A-Fa-f]{12}\b")),
+    # TW NHI (健保卡) card numbers are 12 NUMERIC digits. The old hex class
+    # ``[0-9A-Fa-f]`` produced false positives on ordinary 12-char hex words
+    # (e.g. ``deadbeefcafe``), polluting the audit tally with non-PHI. Digits
+    # only — no real NHI is missed (NHI is numeric), false positives removed.
+    ("TW_NHI",   re.compile(r"\b\d{12}\b")),
     ("SSN",      re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
     ("CREDIT",   re.compile(r"\b(?:\d[ -]?){15,18}\d\b")),
     ("MRN",      re.compile(r"\bMRN[-_]?[A-Z0-9]{4,12}\b", re.IGNORECASE)),

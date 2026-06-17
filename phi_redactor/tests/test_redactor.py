@@ -139,3 +139,26 @@ def test_empty_string_is_clean_passthrough():
     assert m.counters == {}
 
 
+def test_tw_nhi_matches_12_digit_card():
+    """A real TW NHI (健保卡) card number is 12 numeric digits — it must be
+    redacted and tallied as TW_NHI."""
+    text = "健保卡 123456789012 已驗證"
+    clean, m = redact(text)
+    assert "123456789012" not in clean
+    assert "[TW_NHI_1]" in clean
+    assert m.counters.get("TW_NHI") == 1
+
+
+def test_tw_nhi_does_not_flag_hex_words_as_phi():
+    """The old ``[0-9A-Fa-f]{12}`` regex flagged ordinary 12-char hex words
+    (e.g. a git short-hash-like ``deadbeefcafe`` or a CSS-ish token) as NHI
+    PHI. That is a false positive: it pollutes the audit tally with non-PHI
+    and mis-labels harmless text. NHI cards are numeric — non-numeric hex must
+    NOT be reported as TW_NHI."""
+    for benign in ("commit deadbeefcafe landed", "token abcdefabcdef here"):
+        clean, m = redact(benign)
+        assert "TW_NHI" not in m.counters
+        # The benign hex word survives untouched (no over-redaction).
+        assert clean == benign
+
+
