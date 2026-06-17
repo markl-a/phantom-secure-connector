@@ -93,3 +93,28 @@ def test_no_phi_passthrough():
     clean, m = redact(text)
     assert clean == text
     assert m.items == {}
+
+
+def test_round_trip_when_source_contains_literal_token():
+    """If the SOURCE text already contains a literal token like ``[SSN_1]``,
+    naive str.replace restore corrupts it: the pre-existing literal gets
+    rewritten into the redacted PHI value. Restore must return EXACTLY the
+    original bytes. This is a load-bearing reversibility guarantee — the README
+    advertises a reversible map, and an auditor relies on round-trip fidelity.
+    """
+    text = "Note [SSN_1] then real SSN 123-45-6789"
+    clean, m = redact(text, mode="replace")
+    # The real SSN is redacted; the pre-existing literal is left intact.
+    assert "123-45-6789" not in clean
+    # Round-trip must be byte-exact, NOT corrupt the literal [SSN_1].
+    assert m.restore(clean) == text
+
+
+def test_round_trip_with_token_lookalike_and_multiple_phi():
+    text = "ids [EMAIL_1] [SSN_2] real a@b.com SSN 999-00-1111 dup a@b.com"
+    clean, m = redact(text, mode="replace")
+    assert "a@b.com" not in clean
+    assert "999-00-1111" not in clean
+    assert m.restore(clean) == text
+
+

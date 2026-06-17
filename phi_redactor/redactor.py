@@ -56,6 +56,11 @@ class RedactionMap:
     # Per-label set of originals already tallied — used by irreversible mask
     # mode to count uniques without storing a reverse mapping.
     _seen: Dict[str, set] = field(default_factory=dict, repr=False)
+    # Exact replacement spans in the CLEAN output: (out_start, out_end, original).
+    # Span-based restore is byte-exact and immune to the token-collision bug
+    # where a naive str.replace would rewrite a literal "[SSN_1]" that happened
+    # to already exist in the source text.
+    _spans: List[Tuple[int, int, str]] = field(default_factory=list, repr=False)
 
     def issue(self, label: str, original: str) -> str:
         # Re-use the same token for the same original (idempotent within a doc).
@@ -80,13 +85,34 @@ class RedactionMap:
         seen.add(original)
         self.counters[label] = self.counters.get(label, 0) + 1
 
+    def record_span(self, out_start: int, out_end: int, original: str) -> None:
+        """Record the exact span a token occupies in the CLEAN output so
+        ``restore`` can splice the original back byte-exactly."""
+        self._spans.append((out_start, out_end, original))
+
     def restore(self, redacted: str) -> str:
-        """Inverse op — useful for round-trip tests."""
-        out = redacted
-        # Replace longest tokens first to avoid prefix collisions.
+        """Inverse op — reconstruct the original text byte-exactly.
+
+        Uses recorded output spans (not ``str.replace``) so a literal token
+        that pre-existed in the source — e.g. the user wrote ``[SSN_1]`` — is
+        never mistaken for an issued token and corrupted. Falls back to the
+        legacy longest-token replace only when no spans were recorded (e.g. a
+        map built by hand in older callers / tests).
+        """
+        if self._spans:
+            out: List[str] = []
+            cursor = 0
+            for start, end, original in sorted(self._spans):
+                out.append(redacted[cursor:start])
+                out.append(original)
+                cursor = end
+            out.append(redacted[cursor:])
+            return "".join(out)
+        # Legacy fallback: longest tokens first to avoid prefix collisions.
+        out_text = redacted
         for token in sorted(self.items, key=len, reverse=True):
-            out = out.replace(token, self.items[token])
-        return out
+            out_text = out_text.replace(token, self.items[token])
+        return out_text
 
 
 def _walk_matches(text: str) -> List[Tuple[int, int, str, str]]:
@@ -131,13 +157,23 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
 
     out: List[str] = []
     cursor = 0
+    out_len = 0  # running length of the CLEAN output, for span recording
     for s, e, label, original in spans:
-        out.append(text[cursor:s])
+        prefix = text[cursor:s]
+        out.append(prefix)
+        out_len += len(prefix)
         if mode == "replace":
-            out.append(mapping.issue(label, original))
+            token = mapping.issue(label, original)
+            out.append(token)
+            # Record where this token lands in the clean output so restore can
+            # splice the original back without a collision-prone str.replace.
+            mapping.record_span(out_len, out_len + len(token), original)
+            out_len += len(token)
         else:  # mask
             mapping.tally(label, original)  # count even though it's irreversible
-            out.append("*" * (e - s))
+            stars = "*" * (e - s)
+            out.append(stars)
+            out_len += len(stars)
         cursor = e
     out.append(text[cursor:])
     return "".join(out), mapping
