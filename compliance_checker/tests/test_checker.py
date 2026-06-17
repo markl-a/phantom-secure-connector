@@ -112,13 +112,13 @@ def test_cli_returns_0_on_clean(tmp_path: Path):
 def test_cli_json_output_is_valid(tmp_path: Path, capsys):
     csv_path = tmp_path / "v.csv"
     csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
-    rc = _cli(["--standard", "hipaa", "--json", str(csv_path)])
+    # --show-matches to inspect the raw matched value in the structured record.
+    rc = _cli(["--standard", "hipaa", "--json", "--show-matches", str(csv_path)])
     assert rc == 1
     out = capsys.readouterr().out
     parsed = json.loads(out)
     assert isinstance(parsed, list) and parsed
     assert parsed[0]["rule_id"] == "hipaa_07_ssn"
-    # No raw matched value should be absent from the structured record.
     assert parsed[0]["matched"] == "123-45-6789"
 
 
@@ -147,3 +147,84 @@ def test_cli_unsupported_filetype_exits_cleanly(tmp_path: Path, capsys):
     assert rc == 2
     err = capsys.readouterr().err
     assert "unsupported" in err.lower() or ".txt" in err
+
+
+# ----------------- PHI-safe export: redact matched by default ----------------
+from compliance_checker.checker import Violation  # noqa: E402
+
+
+def test_violation_to_dict_redacts_matched_by_default():
+    """A compliance VIOLATION report feeds downstream (logs, tickets, the
+    phantom ecosystem). The raw matched PHI must NOT be the default export —
+    HIPAA 'minimum necessary' / GDPR data minimisation. to_dict() masks the
+    matched value by default; the raw value is opt-in."""
+    v = Violation(
+        rule_id="hipaa_07_ssn", rule_label="SSN", standard="HIPAA",
+        location="row=0 col=ssn", matched="123-45-6789",
+    )
+    d = v.to_dict()
+    assert d["matched"] != "123-45-6789"
+    assert "123-45-6789" not in json.dumps(d)
+    # Fully masked, length-preserved — no partial fragments survive.
+    assert d["matched"] == "*" * len("123-45-6789")
+    # The structure / non-PHI fields are intact.
+    assert d["rule_id"] == "hipaa_07_ssn"
+    assert d["location"] == "row=0 col=ssn"
+
+
+def test_violation_export_fully_masks_composite_match_no_fragment_leak():
+    """A composite rule match (e.g. a URL embedding an email) must be FULLY
+    masked in the default export — not partially redacted, which would leave
+    the domain/path scaffolding (still identifying) exposed. The whole matched
+    span is masked. Regression for the partial-mask leak.
+    """
+    v = Violation(
+        rule_id="hipaa_14_url", rule_label="URL", standard="HIPAA",
+        location="row=0 col=link",
+        matched="https://portal.example/u/alice@example.com/record",
+    )
+    d = v.to_dict()
+    blob = json.dumps(d)
+    for fragment in ("portal", "example", "record", "alice", "https"):
+        assert fragment not in blob
+    assert set(d["matched"]) == {"*"}
+
+
+def test_violation_to_dict_can_reveal_raw_on_explicit_opt_in():
+    v = Violation(
+        rule_id="hipaa_07_ssn", rule_label="SSN", standard="HIPAA",
+        location="row=0 col=ssn", matched="123-45-6789",
+    )
+    d = v.to_dict(show_matches=True)
+    assert d["matched"] == "123-45-6789"
+
+
+def test_cli_json_redacts_matched_by_default(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", "--json", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    # No raw PHI in the default JSON export.
+    assert "123-45-6789" not in out
+    parsed = json.loads(out)
+    assert parsed[0]["rule_id"] == "hipaa_07_ssn"
+
+
+def test_cli_json_show_matches_reveals_raw(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", "--json", "--show-matches", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "123-45-6789" in out
+
+
+def test_cli_text_redacts_matched_by_default(tmp_path: Path, capsys):
+    csv_path = tmp_path / "v.csv"
+    csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
+    rc = _cli(["--standard", "hipaa", str(csv_path)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    # The human-readable report also must not print raw PHI by default.
+    assert "123-45-6789" not in out

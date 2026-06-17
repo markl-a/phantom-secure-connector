@@ -39,10 +39,25 @@ class Violation:
     rule_label: str
     standard: str
     location: str           # e.g. "row=3 col=name" or "json:patients[0].dob"
-    matched: str
+    matched: str            # the raw value that triggered the rule (PHI!)
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self, show_matches: bool = False) -> Dict[str, str]:
+        """Serialise the violation.
+
+        By default the ``matched`` field — which holds the RAW value that
+        triggered the rule — is fully MASKED. A compliance report is itself a
+        downstream artifact (logs, tickets, the phantom ecosystem); shipping
+        raw identifiers in it violates HIPAA 'minimum necessary' / GDPR data
+        minimisation. The whole matched span IS the sensitive thing, so we
+        length-preserve-mask the ENTIRE value — NOT a partial redact via the
+        PHI patterns, which would leave non-PHI scaffolding (a URL's domain /
+        path around an embedded email) exposed. ``rule_id`` + ``location``
+        already tell an auditor what matched and where. Pass
+        ``show_matches=True`` to reveal the raw value for local inspection.
+        """
         d = asdict(self)
+        if not show_matches:
+            d["matched"] = "*" * len(self.matched)
         return d
 
 
@@ -218,6 +233,15 @@ def _cli(argv: List[str] = None) -> int:
     ap.add_argument("--standard", required=True, help="hipaa | gdpr")
     ap.add_argument("path", help="CSV or JSON file to scan")
     ap.add_argument("--json", action="store_true", help="emit JSON output")
+    ap.add_argument(
+        "--show-matches",
+        action="store_true",
+        help=(
+            "reveal the RAW matched PHI in the report (default: masked). "
+            "Use only for local inspection — the report is a downstream "
+            "artifact and raw identifiers in it breach data minimisation."
+        ),
+    )
     args = ap.parse_args(argv)
 
     # Fail cleanly on operator error (unknown standard, missing/unreadable
@@ -242,13 +266,18 @@ def _cli(argv: List[str] = None) -> int:
         return 2
 
     if args.json:
-        json.dump([v.to_dict() for v in vio], sys.stdout, indent=2)
+        json.dump(
+            [v.to_dict(show_matches=args.show_matches) for v in vio],
+            sys.stdout,
+            indent=2,
+        )
         sys.stdout.write("\n")
     else:
         print(f"Standard: {rs.standard} v{rs.version}")
         print(f"Violations: {len(vio)}")
         for v in vio:
-            print(f"  [{v.rule_id}] {v.rule_label} @ {v.location}: {v.matched!r}")
+            shown = v.to_dict(show_matches=args.show_matches)["matched"]
+            print(f"  [{v.rule_id}] {v.rule_label} @ {v.location}: {shown!r}")
     return 0 if not vio else 1
 
 

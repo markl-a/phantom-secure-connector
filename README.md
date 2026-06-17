@@ -64,15 +64,24 @@ from phi_redactor.redactor import redact
 
 text = "張三 1990/01/15 出生, MRN-A123456, alice@example.com SSN 123-45-6789"
 clean, mapping = redact(text, mode="replace")
-# clean   → "張三 [DOB_1] 出生, [MRN_1], [EMAIL_1] [SSN_1]"
-# mapping → reversible map back to originals
+# clean   → "張三 [DOB_ISO_1] 出生, [MRN_1], [EMAIL_1] [SSN_1]"
+# mapping → reversible map back to originals (byte-exact mapping.restore(clean))
 ```
 
 ### Compliance checker
 
 ```bash
+# Scan a CSV/JSON file. The violation report MASKS the matched PHI by default
+# (HIPAA "minimum necessary" / GDPR data minimisation) — the report is itself
+# a downstream artifact. rule_id + location tell you what matched and where.
 python3 -m compliance_checker.checker --standard hipaa path/to/data.csv
+
+# Reveal the raw matched values for local inspection only (opt-in):
+python3 -m compliance_checker.checker --standard hipaa --show-matches data.csv
 ```
+
+Exit codes: `0` = clean, `1` = violations found, `2` = operator error
+(unknown standard, missing/unsupported file).
 
 ### MCP bridge
 
