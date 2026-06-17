@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -324,10 +325,34 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _split_server_cmd(server: str) -> List[str]:
+    """Tokenise the ``--server`` command string in a cross-platform way.
+
+    ``shlex.split`` defaults to POSIX mode, which treats ``\\`` as an escape and
+    DESTROYS Windows paths (``C:\\tools\\phantom.exe`` -> ``C:toolsphantom.exe``).
+    On Windows use ``posix=False`` so backslashes survive — the repo targets
+    identical behaviour on Mac/Windows/Linux.
+
+    ``posix=False`` keeps the wrapping quote characters on a quoted token (e.g.
+    ``"C:\\Program Files\\x.exe"`` stays literally quoted), which would then fail
+    as a subprocess argv element. Strip a single layer of matching wrapping
+    quotes from each token so a quoted path-with-spaces works.
+    """
+    if os.name != "nt":
+        return shlex.split(server, posix=True)
+    tokens = shlex.split(server, posix=False)
+    out: List[str] = []
+    for tok in tokens:
+        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ("'", '"'):
+            tok = tok[1:-1]
+        out.append(tok)
+    return out
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
 
-    server_cmd = shlex.split(args.server)
+    server_cmd = _split_server_cmd(args.server)
     if not server_cmd:
         print("error: --server is empty", file=sys.stderr)
         return 2

@@ -6,6 +6,7 @@ the differentiator — without needing the phantom binary: PHI redaction of
 arguments + allowlist enforcement, plus an in-process end-to-end against the
 sibling ``PhantomMCPServer`` to prove the JSON-RPC handshake/framing works.
 """
+import io
 import json
 import sys
 
@@ -13,6 +14,8 @@ from mcp_bridge.client import (
     DEFAULT_ALLOWLIST,
     MCPClientError,
     MCPStdioClient,
+    _split_server_cmd,
+    main,
     redact_arguments,
 )
 
@@ -154,3 +157,155 @@ def test_end_to_end_against_in_proc_server():
         assert result.get("ok") is True
         # The IPv4 was redacted by the client gate before it ever reached server.
         assert "8.8.8.8" not in json.dumps(result)
+
+
+# --------------------- transport framing (_read_response) -------------------
+class _FakeProc:
+    """Minimal stand-in for subprocess.Popen with a scripted stdout."""
+
+    def __init__(self, lines):
+        self.stdout = io.StringIO("".join(lines))
+        self.stdin = io.StringIO()
+        self.stderr = io.StringIO("")
+
+
+def _client_with_stdout(lines):
+    c = MCPStdioClient(server_cmd=["true"])
+    c.proc = _FakeProc(lines)  # type: ignore[assignment]
+    return c
+
+
+def test_read_response_skips_notifications_and_mismatched_ids():
+    """_read_response must skip interleaved notifications / out-of-order ids and
+    return the response whose id matches, so framing stays correct even when a
+    server emits notifications between requests."""
+    c = _client_with_stdout([
+        json.dumps({"jsonrpc": "2.0", "method": "notifications/progress"}) + "\n",
+        json.dumps({"jsonrpc": "2.0", "id": 99, "result": {"stale": True}}) + "\n",
+        "not json at all\n",
+        "\n",
+        json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}) + "\n",
+    ])
+    resp = c._read_response(1)
+    assert resp["result"] == {"ok": True}
+
+
+def test_read_response_raises_on_closed_stdout():
+    """If the server closes stdout before answering, the client must raise a
+    clear MCPClientError (not hang or return garbage)."""
+    c = _client_with_stdout([])  # EOF immediately
+    c._stderr_buf = ["boom: child crashed\n"]
+    try:
+        c._read_response(1)
+    except MCPClientError as exc:
+        assert "closed stdout" in str(exc)
+        assert "boom" in str(exc)  # stderr tail surfaced for debugging
+    else:  # pragma: no cover
+        raise AssertionError("expected MCPClientError on closed stdout")
+
+
+def test_send_before_start_raises():
+    c = MCPStdioClient(server_cmd=["true"])
+    try:
+        c._send({"jsonrpc": "2.0", "id": 1, "method": "ping"})
+    except MCPClientError as exc:
+        assert "not started" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected MCPClientError when proc not started")
+
+
+# --------------------- cross-platform --server tokenising -------------------
+def test_split_server_cmd_simple():
+    assert _split_server_cmd("phantom mcp") == ["phantom", "mcp"]
+
+
+def test_split_server_cmd_preserves_windows_path(monkeypatch):
+    """A Windows-style path in --server must survive tokenising. Default POSIX
+    shlex eats the backslashes (C:\\tools\\x.exe -> C:toolsx.exe); the splitter
+    must use posix=False on nt. Regression for the cross-platform (P1) bug
+    where a path-qualified server command was mangled into a bad executable."""
+    monkeypatch.setattr("mcp_bridge.client.os.name", "nt")
+    out = _split_server_cmd(r"C:\tools\phantom.exe mcp")
+    assert out[0] == r"C:\tools\phantom.exe"
+    assert out[1] == "mcp"
+    # The backslashes are intact — not collapsed into "C:toolsphantom.exe".
+    assert "\\" in out[0]
+
+
+def test_split_server_cmd_posix_path(monkeypatch):
+    monkeypatch.setattr("mcp_bridge.client.os.name", "posix")
+    out = _split_server_cmd("/usr/local/bin/phantom mcp")
+    assert out == ["/usr/local/bin/phantom", "mcp"]
+
+
+def test_split_server_cmd_windows_quoted_path_with_spaces(monkeypatch):
+    """A quoted Windows path containing spaces must tokenise to a clean argv
+    element WITHOUT the literal wrapping quotes (which would otherwise fail as
+    a subprocess argument). posix=False keeps the quotes; we strip them."""
+    monkeypatch.setattr("mcp_bridge.client.os.name", "nt")
+    out = _split_server_cmd(r'"C:\Program Files\phantom.exe" mcp')
+    assert out[0] == r"C:\Program Files\phantom.exe"
+    assert out[1] == "mcp"
+    # No stray quote characters leaked into the executable token.
+    assert '"' not in out[0]
+
+
+# ------------------------------- CLI surface --------------------------------
+def test_main_bad_args_json_returns_2(capsys):
+    rc = main(["--server", "true", "--call", "ls", "--args", "{not json}"])
+    assert rc == 2
+    assert "bad --args" in capsys.readouterr().err
+
+
+def test_main_args_not_object_returns_2(capsys):
+    rc = main(["--server", "true", "--call", "ls", "--args", "[1,2,3]"])
+    assert rc == 2
+    assert "bad --args" in capsys.readouterr().err
+
+
+def test_main_empty_server_returns_2(capsys):
+    rc = main(["--server", "   ", "--list"])
+    assert rc == 2
+    assert "server is empty" in capsys.readouterr().err
+
+
+def test_main_list_against_in_proc_server(capsys):
+    rc = main(["--server", f"{sys.executable} -m mcp_bridge.server", "--list"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    listed = json.loads(out)
+    names = {t["name"] for t in listed}
+    assert "redact_phi" in names
+
+
+def test_main_call_redacts_phi_before_wire(capsys):
+    """End-to-end through main(): a --call carrying PHI must have that PHI
+    redacted by the gate before it reaches the (in-proc) server, and no raw
+    PHI may appear in the result."""
+    rc = main([
+        "--server", f"{sys.executable} -m mcp_bridge.server",
+        "--allow", "redact_phi",
+        "--call", "redact_phi",
+        "--args", json.dumps({"text": "SSN 123-45-6789"}),
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "123-45-6789" not in captured.out
+
+
+def test_main_call_blocked_tool_returns_1(capsys):
+    """A tool not on the allowlist must be blocked, returning exit 1."""
+    rc = main([
+        "--server", f"{sys.executable} -m mcp_bridge.server",
+        "--allow", "redact_phi",
+        "--call", "phantom_status",
+        "--args", "{}",
+    ])
+    assert rc == 1
+    assert "blocked by allowlist" in capsys.readouterr().err
+
+
+def test_main_nothing_to_do_returns_2(capsys):
+    rc = main(["--server", f"{sys.executable} -m mcp_bridge.server"])
+    assert rc == 2
+    assert "nothing to do" in capsys.readouterr().err
