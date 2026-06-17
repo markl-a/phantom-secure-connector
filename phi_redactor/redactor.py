@@ -149,6 +149,15 @@ def redact(text: str, mode: str = "replace") -> Tuple[str, RedactionMap]:
     """
     if mode not in ("replace", "mask"):
         raise ValueError(f"mode must be 'replace' or 'mask', got {mode!r}")
+    # Explicit, early type guard. A non-str input (None/int/dict/bytes handed
+    # in by a buggy caller) must fail loudly with a clear contract error rather
+    # than a cryptic ``re`` internal crash — and must NEVER pass through
+    # un-redacted, which could leak an unscanned object onto the wire.
+    if not isinstance(text, str):
+        raise TypeError(
+            f"redact() expects str, got {type(text).__name__}; "
+            "callers must decode/serialise to str before redaction"
+        )
 
     mapping = RedactionMap()
     spans = _walk_matches(text)

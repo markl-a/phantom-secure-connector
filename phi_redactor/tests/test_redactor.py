@@ -118,3 +118,24 @@ def test_round_trip_with_token_lookalike_and_multiple_phi():
     assert m.restore(clean) == text
 
 
+def test_non_string_input_raises_typeerror_not_regex_crash():
+    """``redact`` must reject non-str input with a clear, contractual
+    ``TypeError`` — NOT a confusing ``re`` internal crash, and NEVER silently
+    pass through (which could let an un-redacted object reach the wire).
+    A connector that gets handed an int/None/dict by a buggy caller must fail
+    loudly and safely, not leak.
+    """
+    import pytest
+
+    for bad in (None, 123, 4.5, ["SSN 123-45-6789"], {"x": 1}, b"bytes"):
+        with pytest.raises(TypeError):
+            redact(bad)  # type: ignore[arg-type]
+
+
+def test_empty_string_is_clean_passthrough():
+    clean, m = redact("")
+    assert clean == ""
+    assert m.items == {}
+    assert m.counters == {}
+
+
