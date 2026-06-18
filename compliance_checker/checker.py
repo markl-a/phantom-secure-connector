@@ -154,7 +154,7 @@ def load_rules(path: Path) -> RuleSet:
 
 
 def load_standard(name: str) -> RuleSet:
-    """Load a known standard by name (case-insensitive): hipaa | gdpr."""
+    """Load a known standard by name: hipaa | gdpr | pci-dss | tw-pii."""
     fname = f"{name.lower()}.toml"
     p = RULES_DIR / fname
     if not p.exists():
@@ -230,7 +230,7 @@ def scan_file(path: Path, ruleset: RuleSet) -> List[Violation]:
 
 def _cli(argv: List[str] = None) -> int:
     ap = argparse.ArgumentParser(prog="compliance_checker")
-    ap.add_argument("--standard", required=True, help="hipaa | gdpr")
+    ap.add_argument("--standard", required=True, help="hipaa | gdpr | pci-dss | tw-pii")
     ap.add_argument("path", help="CSV or JSON file to scan")
     ap.add_argument("--json", action="store_true", help="emit JSON output")
     ap.add_argument(
