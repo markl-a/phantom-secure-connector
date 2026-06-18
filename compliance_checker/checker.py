@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import json
 import re
 import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Pattern, Tuple
+from typing import Dict, Iterable, List, Pattern
 
 RULES_DIR = Path(__file__).resolve().parent / "rules"
 
@@ -228,11 +229,107 @@ def scan_file(path: Path, ruleset: RuleSet) -> List[Violation]:
     raise ValueError(f"unsupported file type: {p.suffix}")
 
 
+def render_html(ruleset, violations, source, show_matches=False) -> str:
+    """Render a self-contained HTML audit report (string)."""
+    standard = html.escape(str(ruleset.standard))
+    version = html.escape(str(ruleset.version))
+    source_file = html.escape(str(source))
+    count = html.escape(str(len(violations)))
+    match_note = "shown" if show_matches else "MASKED"
+
+    parts = [
+        "<!DOCTYPE html>",
+        '<html lang="en">',
+        "<head>",
+        '<meta charset="utf-8">',
+        "<title>Compliance Audit Report</title>",
+        "<style>",
+        "body { font-family: Arial, sans-serif; margin: 2rem; color: #222; }",
+        "h1 { margin-top: 0; }",
+        ".summary { margin: 1rem 0 1.5rem; }",
+        "dl { display: grid; grid-template-columns: max-content 1fr; "
+        "gap: .4rem 1rem; }",
+        "dt { font-weight: 700; }",
+        "dd { margin: 0; }",
+        "table { border-collapse: collapse; width: 100%; }",
+        "th, td { border: 1px solid #ccc; padding: .5rem; text-align: left; }",
+        "th { background: #f3f3f3; }",
+        "td { vertical-align: top; }",
+        "</style>",
+        "</head>",
+        "<body>",
+        "<h1>Compliance Audit Report</h1>",
+        '<section class="summary">',
+        "<dl>",
+        f"<dt>Standard</dt><dd>{standard}</dd>",
+        f"<dt>Version</dt><dd>{version}</dd>",
+        f"<dt>Source file</dt><dd>{source_file}</dd>",
+        f"<dt>Violations</dt><dd>{count}</dd>",
+        f"<dt>Match visibility</dt><dd>Matches are {match_note}.</dd>",
+        "</dl>",
+        "</section>",
+    ]
+
+    if violations:
+        parts.extend(
+            [
+                "<table>",
+                "<thead>",
+                "<tr>",
+                "<th>Rule ID</th>",
+                "<th>Rule</th>",
+                "<th>Location</th>",
+                "<th>Match</th>",
+                "</tr>",
+                "</thead>",
+                "<tbody>",
+            ]
+        )
+        for v in violations:
+            data = v.to_dict(show_matches=show_matches)
+            rule_id = html.escape(str(data["rule_id"]))
+            rule_label = html.escape(str(data["rule_label"]))
+            location = html.escape(str(data["location"]))
+            matched = html.escape(str(data["matched"]))
+            parts.extend(
+                [
+                    "<tr>",
+                    f"<td>{rule_id}</td>",
+                    f"<td>{rule_label}</td>",
+                    f"<td>{location}</td>",
+                    f"<td>{matched}</td>",
+                    "</tr>",
+                ]
+            )
+        parts.extend(["</tbody>", "</table>"])
+    else:
+        parts.append("<p>No violations found.</p>")
+
+    parts.extend(["</body>", "</html>"])
+    return "\n".join(parts)
+
+
 def _cli(argv: List[str] = None) -> int:
     ap = argparse.ArgumentParser(prog="compliance_checker")
-    ap.add_argument("--standard", required=True, help="hipaa | gdpr | pci-dss | tw-pii")
+    ap.add_argument(
+        "--standard",
+        required=True,
+        help="hipaa | gdpr | pci-dss | tw-pii",
+    )
     ap.add_argument("path", help="CSV or JSON file to scan")
     ap.add_argument("--json", action="store_true", help="emit JSON output")
+    ap.add_argument(
+        "--format",
+        choices=["text", "json", "html"],
+        default=None,
+        help="output format (default: text, or json if --json)",
+    )
+    ap.add_argument(
+        "--html-out",
+        metavar="PATH",
+        default=None,
+        help="write the HTML audit report to PATH",
+    )
     ap.add_argument(
         "--show-matches",
         action="store_true",
@@ -253,7 +350,10 @@ def _cli(argv: List[str] = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except (ValueError, KeyError, re.error) as exc:
-        print(f"error: bad rule file for {args.standard!r}: {exc}", file=sys.stderr)
+        print(
+            f"error: bad rule file for {args.standard!r}: {exc}",
+            file=sys.stderr,
+        )
         return 2
 
     try:
@@ -265,7 +365,25 @@ def _cli(argv: List[str] = None) -> int:
         print(f"error: cannot scan {args.path!r}: {exc}", file=sys.stderr)
         return 2
 
-    if args.json:
+    fmt = args.format
+    if fmt is None:
+        if args.html_out is not None:
+            fmt = "html"
+        elif args.json:
+            fmt = "json"
+        else:
+            fmt = "text"
+
+    if fmt == "html":
+        report = render_html(
+            rs, vio, args.path, show_matches=args.show_matches
+        )
+        if args.html_out is not None:
+            Path(args.html_out).write_text(report, encoding="utf-8")
+            print(f"HTML report written to {args.html_out}")
+        else:
+            sys.stdout.write(report + "\n")
+    elif fmt == "json":
         json.dump(
             [v.to_dict(show_matches=args.show_matches) for v in vio],
             sys.stdout,
