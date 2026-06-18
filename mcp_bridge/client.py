@@ -45,6 +45,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # Make the sibling phi_redactor importable when run as a module or a script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from phi_redactor.redactor import RedactionMap, redact  # noqa: E402
+from secops_simulator import scan as scan_injection  # noqa: E402
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -143,6 +144,8 @@ class MCPStdioClient:
     server_cmd: List[str]
     allowlist: Tuple[str, ...] = DEFAULT_ALLOWLIST
     timeout: float = 30.0
+    scan_responses: bool = True
+    scan_mode: str = "block"  # "block" | "warn"
     proc: Optional[subprocess.Popen] = field(default=None, init=False)
     _next_id: int = field(default=0, init=False)
     _stderr_buf: List[str] = field(default_factory=list, init=False)
@@ -268,7 +271,8 @@ class MCPStdioClient:
 
         Gate order:
           1. allowlist check (block before anything crosses the boundary),
-          2. PHI redaction of arguments (tokenise before send).
+          2. PHI redaction of arguments (tokenise before send),
+          3. inbound response prompt-injection scan.
         Emits human-readable gate lines to stderr so the security action is
         visible in demos.
         """
@@ -295,7 +299,28 @@ class MCPStdioClient:
         else:
             print("[gate] redacted 0 PHI item(s) before send", file=sys.stderr)
 
-        return self._request("tools/call", {"name": name, "arguments": clean_args})
+        result = self._request("tools/call", {"name": name, "arguments": clean_args})
+        if self.scan_responses:
+            response_text = json.dumps(result, default=str)
+            findings = scan_injection(response_text)
+            if findings:
+                print(
+                    f"[gate] inbound injection flagged: {len(findings)} finding(s) in "
+                    f"response from tool {name!r}",
+                    file=sys.stderr,
+                )
+                masked = [f.to_dict() for f in findings]
+                if self.scan_mode == "block":
+                    raise MCPClientError(
+                        f"inbound injection flagged {len(findings)} finding(s) "
+                        f"in response from tool {name!r}: {masked}"
+                    )
+                if isinstance(result, dict):
+                    result["_injection_findings"] = masked
+                else:
+                    result = {"result": result, "_injection_findings": masked}
+
+        return result
 
 
 # --------------------------------------------------------------------------- #
