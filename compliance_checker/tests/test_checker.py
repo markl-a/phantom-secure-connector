@@ -113,7 +113,9 @@ def test_cli_json_output_is_valid(tmp_path: Path, capsys):
     csv_path = tmp_path / "v.csv"
     csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
     # --show-matches to inspect the raw matched value in the structured record.
-    rc = _cli(["--standard", "hipaa", "--json", "--show-matches", str(csv_path)])
+    rc = _cli([
+        "--standard", "hipaa", "--json", "--show-matches", str(csv_path),
+    ])
     assert rc == 1
     out = capsys.readouterr().out
     parsed = json.loads(out)
@@ -122,7 +124,9 @@ def test_cli_json_output_is_valid(tmp_path: Path, capsys):
     assert parsed[0]["matched"] == "123-45-6789"
 
 
-def test_cli_unknown_standard_exits_cleanly_no_traceback(tmp_path: Path, capsys):
+def test_cli_unknown_standard_exits_cleanly_no_traceback(
+    tmp_path: Path, capsys
+):
     """An unknown --standard must produce a clean error + nonzero exit, NOT an
     uncaught FileNotFoundError traceback dumped at the user."""
     csv_path = tmp_path / "x.csv"
@@ -214,7 +218,9 @@ def test_cli_json_redacts_matched_by_default(tmp_path: Path, capsys):
 def test_cli_json_show_matches_reveals_raw(tmp_path: Path, capsys):
     csv_path = tmp_path / "v.csv"
     csv_path.write_text("ssn\n123-45-6789\n", encoding="utf-8")
-    rc = _cli(["--standard", "hipaa", "--json", "--show-matches", str(csv_path)])
+    rc = _cli([
+        "--standard", "hipaa", "--json", "--show-matches", str(csv_path),
+    ])
     assert rc == 1
     out = capsys.readouterr().out
     assert "123-45-6789" in out
@@ -228,3 +234,25 @@ def test_cli_text_redacts_matched_by_default(tmp_path: Path, capsys):
     out = capsys.readouterr().out
     # The human-readable report also must not print raw PHI by default.
     assert "123-45-6789" not in out
+
+
+def test_cli_html_report_e2e_masks_pii_and_escapes(tmp_path):
+    raw_email = "patient@example.com"
+    csv_path = tmp_path / "rec.csv"
+    # Column header carries an HTML-injection payload to prove escaping;
+    # the cell value is a HIPAA email match to prove masking.
+    csv_path.write_text("no<script>te\n" + raw_email + "\n", encoding="utf-8")
+    out_path = tmp_path / "report.html"
+    rc = _cli(["--standard", "hipaa", "--format", "html",
+               "--html-out", str(out_path), str(csv_path)])
+    assert rc == 1  # violations present
+    report = out_path.read_text(encoding="utf-8")
+    # self-contained, no external assets
+    assert "<style>" in report
+    assert "http://" not in report and "https://" not in report
+    assert "<script>" not in report  # no XSS: payload was escaped
+    assert "&lt;script&gt;" in report  # escaped form present
+    assert "HIPAA" in report  # standard name rendered
+    # PII masked by default: raw value absent, full-length mask present
+    assert raw_email not in report
+    assert "*" * len(raw_email) in report
