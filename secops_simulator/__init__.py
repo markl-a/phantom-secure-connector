@@ -1,4 +1,12 @@
-"""Red/blue team simulator — Tier 1 stub that wraps phantom-secops if present."""
-from .simulator import run_simulation, secops_available, SECOPS_PATH
+"""Red/blue team simulator — native OWASP-LLM01 prompt-injection detector."""
+from .detector import SIGNATURES, Finding, scan
+from .simulator import SECOPS_PATH, run_simulation, secops_available
 
-__all__ = ["run_simulation", "secops_available", "SECOPS_PATH"]
+__all__ = [
+    "run_simulation",
+    "secops_available",
+    "SECOPS_PATH",
+    "scan",
+    "Finding",
+    "SIGNATURES",
+]
