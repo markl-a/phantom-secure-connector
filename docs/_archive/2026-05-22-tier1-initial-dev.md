@@ -1,5 +1,7 @@
 # 2026-05-22 — Tier 1 initial dev
 
+> ARCHIVED 2026-06-19 — frozen historical snapshot; current status lives in [/ROADMAP.md](../../ROADMAP.md).
+
 ## What shipped
 
 | Module | LOC (approx) | Status | Tests |
