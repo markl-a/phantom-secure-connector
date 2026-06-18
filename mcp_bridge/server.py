@@ -7,6 +7,11 @@ Anthropic's spec stabilises.
 
 Tools exposed:
 - ``redact_phi``            — de-identify PHI/PII (this suite's own capability)
+- ``list_standards``        — list compliance standards from compliance_checker/rules/*.toml
+- ``compliance_scan``       — scan free text for compliance violations
+- ``compliance_scan_file``  — scan CSV/JSON files for compliance violations
+- ``mask_text``             — reversibly tokenise PHI/PII, returning tokens + handle
+- ``restore_text``          — restore text from a mask_text handle + tokenised text
 - ``phantom_status``        — GET http://127.0.0.1:7878/api/status
 - ``phantom_fts5_search``   — search via ``phantom recall`` (decrypts events/; sqlite index is dead)
 - ``phantom_event_capture`` — subprocess ``phantom event capture --text <text>``
@@ -27,9 +32,17 @@ from typing import Any, Callable, Dict, List, Optional
 
 # Make the sibling phi_redactor importable when run as `python mcp_bridge/server.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from phi_redactor.redactor import redact  # noqa: E402
+from phi_redactor.redactor import redact, RedactionMap  # noqa: E402
+from compliance_checker.checker import load_standard, scan_records, scan_file, RULES_DIR  # noqa: E402
 
 PHANTOM_STATUS_URL = "http://127.0.0.1:7878/api/status"
+
+# In-process store of reversible redaction maps, keyed by an opaque handle.
+# mask_text returns ONLY tokens to the caller (no raw PHI crosses the wire);
+# the reverse map stays server-side and is consumed by restore_text. A simple
+# monotonic counter keeps handles unique within a server process (no Date/rand).
+_REDACTION_STORE: Dict[str, RedactionMap] = {}
+_REDACTION_SEQ: List[int] = [0]
 
 
 def _safe(value: Any) -> str:
@@ -112,6 +125,91 @@ def redact_phi(args: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "redacted": clean, "count": count, "by_type": mapping.counters}
 
 
+def list_standards(_args: Dict[str, Any]) -> Dict[str, Any]:
+    """List the real compliance standards available (compliance_checker/rules/*.toml)."""
+    names = sorted(p.stem for p in RULES_DIR.glob("*.toml"))
+    return {"ok": True, "standards": names}
+
+
+def compliance_scan(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Scan free text for compliance violations via the REAL compliance_checker
+    engine (scan_records). Matched values are MASKED by default (Violation.to_dict)."""
+    text = args.get("text", "")
+    standard = args.get("standard", "")
+    if not text:
+        return {"ok": False, "error": "missing 'text' argument"}
+    if not standard:
+        return {"ok": False, "error": "missing 'standard' argument"}
+    try:
+        rs = load_standard(standard)
+    except (FileNotFoundError, ValueError) as exc:
+        return {"ok": False, "error": _safe(exc)}
+    violations = scan_records([{"text": text}], rs)
+    return {
+        "ok": True,
+        "standard": rs.standard,
+        "count": len(violations),
+        "violations": [v.to_dict() for v in violations],
+    }
+
+
+def compliance_scan_file(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Scan a CSV/JSON FILE for compliance violations via the REAL scan_file engine.
+    Matched values are MASKED by default."""
+    path = args.get("path", "")
+    standard = args.get("standard", "")
+    if not path:
+        return {"ok": False, "error": "missing 'path' argument"}
+    if not standard:
+        return {"ok": False, "error": "missing 'standard' argument"}
+    try:
+        rs = load_standard(standard)
+    except (FileNotFoundError, ValueError) as exc:
+        return {"ok": False, "error": _safe(exc)}
+    try:
+        violations = scan_file(Path(path), rs)
+    except FileNotFoundError:
+        return {"ok": False, "error": "input file not found"}
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "error": _safe(exc)}
+    return {
+        "ok": True,
+        "standard": rs.standard,
+        "count": len(violations),
+        "violations": [v.to_dict() for v in violations],
+    }
+
+
+def mask_text(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Tokenise PHI reversibly via the REAL phi_redactor (redact mode='replace').
+    Returns ONLY the tokenised text + a handle; the reverse map stays server-side
+    so no raw PHI crosses the wire. Pair with restore_text for a byte-exact round-trip."""
+    text = args.get("text", "")
+    if not text:
+        return {"ok": False, "error": "missing 'text' argument"}
+    clean, mapping = redact(text, mode="replace")
+    _REDACTION_SEQ[0] += 1
+    handle = f"red-{_REDACTION_SEQ[0]}"
+    _REDACTION_STORE[handle] = mapping
+    count = sum(mapping.counters.values())
+    return {"ok": True, "handle": handle, "redacted": clean, "count": count, "by_type": mapping.counters}
+
+
+def restore_text(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Inverse of mask_text: reconstruct the ORIGINAL text byte-exactly via the
+    REAL RedactionMap.restore, using the server-side map referenced by handle.
+    redacted must be the unmodified output of the paired mask_text call. This tool
+    deliberately returns the original (its sole purpose is de-tokenising for the
+    same caller who created the handle)."""
+    handle = args.get("handle", "")
+    redacted = args.get("redacted", "")
+    mapping = _REDACTION_STORE.get(handle)
+    if mapping is None:
+        return {"ok": False, "error": "unknown or expired handle"}
+    restored = mapping.restore(redacted)
+    return {"ok": True, "restored": restored}
+
+
 def phantom_event_capture(args: Dict[str, Any]) -> Dict[str, Any]:
     """Run ``phantom event capture --text <text>`` if the phantom binary is in PATH."""
     text = args.get("text", "")
@@ -185,6 +283,52 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["text"],
         },
         handler=redact_phi,
+    ),
+    Tool(
+        name="list_standards",
+        description="List the available compliance standards (hipaa/gdpr/pci-dss/tw-pii).",
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=list_standards,
+    ),
+    Tool(
+        name="compliance_scan",
+        description="Scan free text for compliance violations (matched values masked).",
+        input_schema={
+            "type": "object",
+            "properties": {"text": {"type": "string"}, "standard": {"type": "string"}},
+            "required": ["text", "standard"],
+        },
+        handler=compliance_scan,
+    ),
+    Tool(
+        name="compliance_scan_file",
+        description="Scan a CSV/JSON file for compliance violations (matched values masked).",
+        input_schema={
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "standard": {"type": "string"}},
+            "required": ["path", "standard"],
+        },
+        handler=compliance_scan_file,
+    ),
+    Tool(
+        name="mask_text",
+        description="Reversibly tokenise PHI; returns tokens + a handle (round-trip with restore_text).",
+        input_schema={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+        handler=mask_text,
+    ),
+    Tool(
+        name="restore_text",
+        description="Reconstruct original text byte-exactly from a mask_text handle + redacted text.",
+        input_schema={
+            "type": "object",
+            "properties": {"handle": {"type": "string"}, "redacted": {"type": "string"}},
+            "required": ["handle", "redacted"],
+        },
+        handler=restore_text,
     ),
 ]
 
