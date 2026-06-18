@@ -1,12 +1,24 @@
 # mcp_bridge — wire phantom-mesh into Claude Desktop / Cursor
 
-Tier 1 ships a minimal stdio MCP-style server with three tools:
+> Usage doc for the MCP server. For project status / what's shipped, see
+> [/ROADMAP.md](../ROADMAP.md).
+
+A stdio MCP-style server exposing phantom + this suite's own engines:
 
 | Tool | What it does |
 |---|---|
 | `phantom_status` | GET `http://127.0.0.1:7878/api/status` from the local phantom coordinator |
-| `phantom_fts5_search` | Placeholder; Tier 2 hits the real FTS5 search endpoint |
-| `phantom_event_capture` | Runs `phantom event capture <text>` via subprocess |
+| `phantom_fts5_search` | Search phantom's event timeline via `phantom recall --json` |
+| `phantom_event_capture` | Runs `phantom event capture --text <text>` via subprocess |
+| `redact_phi` | De-identify PHI/PII via `phi_redactor` |
+| `list_standards` | List compliance standards from `compliance_checker/rules/*.toml` |
+| `compliance_scan` | Scan free text for compliance violations |
+| `compliance_scan_file` | Scan a CSV/JSON file for compliance violations |
+| `mask_text` | Reversibly tokenise PHI/PII, returning tokens + a server-side handle |
+| `restore_text` | Byte-exact restore from a `mask_text` handle + tokenised text |
+
+PHI is masked by default; `mask_text` returns only tokens (no raw PHI crosses
+the wire) and the reverse map stays server-side for `restore_text`.
 
 ## Claude Desktop config
 
@@ -28,7 +40,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 }
 ```
 
-Restart Claude Desktop. The three tools should appear in the tool picker.
+Restart Claude Desktop. The tools listed above should appear in the tool picker.
 
 ## Cursor / Codex
 
@@ -43,12 +55,9 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | \
   python3 -m mcp_bridge.server
 ```
 
-You should see a JSON response listing the three tools.
+You should see a JSON response listing the tools.
 
 ## Roadmap
 
-- Swap the hand-rolled JSON-RPC loop for the official `mcp` Python SDK once
-  the spec stabilises (Anthropic is still iterating).
-- Implement `phantom_fts5_search` against the phantom HTTP API.
-- Add auth: today the bridge trusts whatever is on stdio. Production needs
-  per-tool capability scoping aligned with phantom-mesh's cap system.
+Planned bridge work (official `mcp` SDK migration, per-tool capability scoping,
+etc.) is tracked centrally in [/ROADMAP.md](../ROADMAP.md).
