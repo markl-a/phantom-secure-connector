@@ -1,0 +1,38 @@
+# PAN rules are regex-only because the checker rule mechanism cannot express
+# the Luhn checksum; these match by scheme prefix + length only, with no Luhn
+# validation. This is a known mechanism limitation, not faked. CVV and expiry
+# rules require a keyword anchor on purpose so ordinary 3-4 digit numbers and
+# MM-YY dates are not flagged.
+
+standard = "PCI-DSS"
+version = "2026-06"
+
+[[rule]]
+id = "pci_visa"
+label = "Visa card number (PAN)"
+regex = "\\b4\\d{3}(?:[ -]?\\d{4}){3}\\b"
+
+[[rule]]
+id = "pci_mastercard"
+label = "Mastercard card number (PAN)"
+regex = "\\b(?:5[1-5]\\d{2}|222[1-9]|22[3-9]\\d|2[3-6]\\d{2}|27[01]\\d|2720)(?:[ -]?\\d{4}){3}\\b"
+
+[[rule]]
+id = "pci_amex"
+label = "American Express card number (PAN)"
+regex = "\\b3[47]\\d{2}[ -]?\\d{6}[ -]?\\d{5}\\b"
+
+[[rule]]
+id = "pci_jcb"
+label = "JCB card number (PAN)"
+regex = "\\b35(?:2[89]|[3-8]\\d)(?:[ -]?\\d{4}){3}\\b"
+
+[[rule]]
+id = "pci_cvv"
+label = "Card verification value (CVV/CVC)"
+regex = "(?i)\\b(?:cvv2?|cvc2?|cid|card[ _]?verification|security[ _]code)\\b\\s*[:#]?\\s*\\d{3,4}\\b"
+
+[[rule]]
+id = "pci_expiry"
+label = "Card expiry date"
+regex = "(?i)\\b(?:exp(?:iry|iration)?(?:[ _]date)?|valid[ _]thru)\\b\\s*[:#]?\\s*(?:0[1-9]|1[0-2])[\\/-](?:\\d{2}|20\\d{2})\\b"

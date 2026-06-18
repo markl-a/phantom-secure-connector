@@ -1,0 +1,36 @@
+# NHI (12-digit) and BAN (8-digit) rules require a keyword anchor on purpose
+# to avoid flagging ordinary numbers; checksum validation is not expressible in
+# the regex-only mechanism.
+
+standard = "TW-PII"
+version = "2026-06"
+
+[[rule]]
+id = "tw_national_id"
+label = "Taiwan National ID (身分證字號)"
+regex = "\\b[A-Z][12]\\d{8}\\b"
+
+[[rule]]
+id = "tw_nhi_card"
+label = "Taiwan NHI card number (健保卡號)"
+regex = "(?i)(?:健保卡號?|NHI(?:[ _]card)?)[:：#\\s]*\\d{12}\\b"
+
+[[rule]]
+id = "tw_ban"
+label = "Taiwan unified business no. (統一編號)"
+regex = "(?i)(?:統一編號|統編|BAN)[:：#\\s]*\\d{8}\\b"
+
+[[rule]]
+id = "tw_mobile"
+label = "Taiwan mobile number (手機 09xx)"
+regex = "\\b09\\d{2}[- ]?\\d{3}[- ]?\\d{3}\\b"
+
+[[rule]]
+id = "tw_landline"
+label = "Taiwan landline (市話)"
+regex = "(?:\\(0\\d{1,2}\\)|\\b0\\d{1,2}-)\\s?\\d{6,8}\\b"
+
+[[rule]]
+id = "tw_email"
+label = "Email address"
+regex = "\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b"
