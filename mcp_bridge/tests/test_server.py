@@ -17,6 +17,11 @@ def test_tools_registered():
     names = srv.tool_names()
     assert set(names) == {
         "redact_phi",
+        "list_standards",
+        "compliance_scan",
+        "compliance_scan_file",
+        "mask_text",
+        "restore_text",
         "phantom_status",
         "phantom_fts5_search",
         "phantom_event_capture",
@@ -29,7 +34,7 @@ def test_tools_list_response_shape():
     assert resp["id"] == 1
     assert "result" in resp
     tools = resp["result"]["tools"]
-    assert len(tools) == 4
+    assert len(tools) == 9
     for t in tools:
         assert "name" in t and "description" in t and "inputSchema" in t
 
@@ -375,3 +380,70 @@ def test_serve_stdio_survives_handler_error(monkeypatch):
     assert lines[1]["result"]["ok"]     # second call succeeded — loop survived
     # No raw PHI leaked anywhere in the responses.
     assert "123-45-6789" not in out.getvalue()
+
+
+def test_list_standards_returns_real_standards():
+    srv = PhantomMCPServer()
+    resp = srv.handle({"jsonrpc": "2.0", "id": 40, "method": "tools/call",
+                       "params": {"name": "list_standards", "arguments": {}}})
+    r = resp["result"]
+    assert r["ok"] is True
+    assert {"hipaa", "gdpr", "pci-dss", "tw-pii"}.issubset(set(r["standards"]))
+
+
+def test_compliance_scan_flags_planted_pii_and_masks_it():
+    srv = PhantomMCPServer()
+    resp = srv.handle({"jsonrpc": "2.0", "id": 41, "method": "tools/call",
+                       "params": {"name": "compliance_scan",
+                                  "arguments": {"text": "patient SSN 123-45-6789",
+                                                "standard": "hipaa"}}})
+    r = resp["result"]
+    assert r["ok"] is True
+    assert r["count"] >= 1
+    assert "123-45-6789" not in json.dumps(resp)
+
+
+def test_compliance_scan_unknown_standard_errors_cleanly():
+    srv = PhantomMCPServer()
+    resp = srv.handle({"jsonrpc": "2.0", "id": 42, "method": "tools/call",
+                       "params": {"name": "compliance_scan",
+                                  "arguments": {"text": "hi", "standard": "nope"}}})
+    assert resp["result"]["ok"] is False
+
+
+def test_compliance_scan_file_flags_planted_pii(tmp_path):
+    csv_path = tmp_path / "patients.csv"
+    csv_path.write_text("name,ssn\nAlice,123-45-6789\n", encoding="utf-8")
+    srv = PhantomMCPServer()
+    resp = srv.handle({"jsonrpc": "2.0", "id": 43, "method": "tools/call",
+                       "params": {"name": "compliance_scan_file",
+                                  "arguments": {"path": str(csv_path), "standard": "hipaa"}}})
+    r = resp["result"]
+    assert r["ok"] is True
+    assert r["count"] >= 1
+    assert "123-45-6789" not in json.dumps(resp)
+
+
+def test_mask_then_restore_round_trips_byte_exact():
+    srv = PhantomMCPServer()
+    original = "patient SSN 123-45-6789 email alice@example.com"
+    m = srv.handle({"jsonrpc": "2.0", "id": 44, "method": "tools/call",
+                    "params": {"name": "mask_text", "arguments": {"text": original}}})
+    mr = m["result"]
+    assert mr["ok"] is True
+    assert mr["count"] == 2
+    assert "123-45-6789" not in json.dumps(m)
+    assert "alice@example.com" not in json.dumps(m)
+    r = srv.handle({"jsonrpc": "2.0", "id": 45, "method": "tools/call",
+                    "params": {"name": "restore_text",
+                               "arguments": {"handle": mr["handle"], "redacted": mr["redacted"]}}})
+    assert r["result"]["ok"] is True
+    assert r["result"]["restored"] == original
+
+
+def test_restore_text_unknown_handle_errors():
+    srv = PhantomMCPServer()
+    resp = srv.handle({"jsonrpc": "2.0", "id": 46, "method": "tools/call",
+                       "params": {"name": "restore_text",
+                                  "arguments": {"handle": "red-999999", "redacted": "x"}}})
+    assert resp["result"]["ok"] is False
