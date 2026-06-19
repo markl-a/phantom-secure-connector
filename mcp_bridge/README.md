@@ -1,7 +1,7 @@
 # mcp_bridge — wire phantom-mesh into Claude Desktop / Cursor
 
 > Usage doc for the MCP server. For project status / what's shipped, see
-> [/ROADMAP.md](../ROADMAP.md).
+> [/docs/phantom-secure-connector.md](../docs/phantom-secure-connector.md).
 
 A stdio MCP-style server exposing phantom + this suite's own engines:
 
@@ -60,4 +60,4 @@ You should see a JSON response listing the tools.
 ## Roadmap
 
 Planned bridge work (official `mcp` SDK migration, per-tool capability scoping,
-etc.) is tracked centrally in [/ROADMAP.md](../ROADMAP.md).
+etc.) is tracked centrally in [/docs/phantom-secure-connector.md](../docs/phantom-secure-connector.md).

@@ -1,5 +1,7 @@
 # Documentation index — phantom-secure-connector
 
+> ARCHIVED 2026-06-19 — 內容已併入 docs/phantom-secure-connector.md;此為歷史版本。
+
 Single navigation entry for every doc in this repo. For project **status**, see
 [/ROADMAP.md](../ROADMAP.md) (the status source of truth) — not the docs below.
 

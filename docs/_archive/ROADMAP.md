@@ -1,5 +1,7 @@
 # Roadmap — phantom-secure-connector
 
+> ARCHIVED 2026-06-19 — 內容已併入 docs/phantom-secure-connector.md;此為歷史版本。
+
 > Single source of truth for project status. README links here; do not duplicate
 > status lists elsewhere. Date-stamped 2026-06-19. "Shipped" entries are grounded
 > in merged commits on `master`.
