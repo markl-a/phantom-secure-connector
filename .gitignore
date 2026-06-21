@@ -69,3 +69,10 @@ private/
 
 # Local dev task scratch files (machine-specific; never publish)
 TASK-*.md
+
+# Autonomous-loop scratch (machine-specific; may carry host/path leaks; never publish)
+.ai-shared/
+overnight/
+cache/
+SESSION_RESUME.md
+configs/agents.*.toml
