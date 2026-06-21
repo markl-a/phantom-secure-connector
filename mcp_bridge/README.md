@@ -33,7 +33,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
         "-m",
         "mcp_bridge.server"
       ],
-      "cwd": "/Users/marklight/Documents/GitHub/phantom-secure-connector",
+      "cwd": "/path/to/phantom-secure-connector",
       "env": {}
     }
   }
@@ -50,7 +50,7 @@ Same JSON block under their respective MCP server config sections. Cursor uses
 ## Manual smoke test
 
 ```bash
-cd /Users/marklight/Documents/GitHub/phantom-secure-connector
+cd /path/to/phantom-secure-connector
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | \
   python3 -m mcp_bridge.server
 ```

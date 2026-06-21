@@ -80,10 +80,10 @@ graph LR
 
 | 階段 | 目標 | 具體項(2–4) | 在哪台機 + 哪 AI | 風險前置 |
 |---|---|---|---|---|
-| **P-A** 🟢<br/>MCP/閘 收尾 | 把純軟體、最便宜高值的部分做完(不需真裝置) | ① `mcp_bridge` 遷移**官方 mcp SDK**(候選方向)<br/>② 每工具 capability scoping<br/>③ inbound 注入閘再擴(LLM02 前哨) | z13 / M5 寫=codex→claude;審=opencode+agy | SDK 是否穩定到不重新引入依賴 churn;遷移前先寫對照測試,行為不退步 |
-| **P-B** 🟡<br/>Ingest 契約 + Garmin | 定義 source-connector 介面,接第一個來源(Garmin 走 web API,**不需 iOS**) | ① Singer-shaped source 介面(候選參考 Singer/Meltano,不採 runtime）<br/>② 接 **python-garminconnect**(候選方向,鎖 extras flag 保核心零依賴)<br/>③ Garmin rows → `phi_redactor` → `compliance_checker` → 加密 → FTS5 | acer / ayaneo 寫=codex→claude;審=agy+opencode | 真實 Garmin 帳號 = 操作者決策;先用合成資料跑通契約,真裝置只在最後一哩 |
-| **P-C** 🟠<br/>HealthKit 匯入 | 消費 Apple Health 匯出(**不自建 iOS app**) | ① 解析 Apple Health export XML(候選參考 apple-health-grafana 解析器)<br/>② 或接 **Open Wearables** 正規化 feed / Health Auto Export push(候選方向 — **包不重造**)<br/>③ 走同一條 redact→加密→FTS5 | Android/iOS 端取資料 → z13 處理;寫=claude;審=codex+agy | 需 iOS 裝置/操作者匯出 → 排在 Garmin 之後;避免重造 provider 正規化 |
-| **P-D** 🟣<br/>進階(opt-in 重) | 只有當真實使用證明 regex 漏接才做 | ① **Presidio** NER 後置(候選方向,`--ner` flag、僅本地模型)<br/>② OWASP LLM02–10 + live red-team<br/>③ ARX 式 differential-privacy 聚合匯出(候選參考) | M1 / z13 寫=codex→claude;審=opencode+agy | LLM-augmented de-id 本身可能漏 PHI → 必須本地模型 + 明確同意閘;否則不做 |
+| **P-A** 🟢<br/>MCP/閘 收尾 | 把純軟體、最便宜高值的部分做完(不需真裝置) | ① `mcp_bridge` 遷移**官方 mcp SDK**(候選方向)<br/>② 每工具 capability scoping<br/>③ inbound 注入閘再擴(LLM02 前哨) | orchestrator node (Win) / a Mac node 寫=codex→claude;審=opencode+agy | SDK 是否穩定到不重新引入依賴 churn;遷移前先寫對照測試,行為不退步 |
+| **P-B** 🟡<br/>Ingest 契約 + Garmin | 定義 source-connector 介面,接第一個來源(Garmin 走 web API,**不需 iOS**) | ① Singer-shaped source 介面(候選參考 Singer/Meltano,不採 runtime）<br/>② 接 **python-garminconnect**(候選方向,鎖 extras flag 保核心零依賴)<br/>③ Garmin rows → `phi_redactor` → `compliance_checker` → 加密 → FTS5 | a Windows node 寫=codex→claude;審=agy+opencode | 真實 Garmin 帳號 = 操作者決策;先用合成資料跑通契約,真裝置只在最後一哩 |
+| **P-C** 🟠<br/>HealthKit 匯入 | 消費 Apple Health 匯出(**不自建 iOS app**) | ① 解析 Apple Health export XML(候選參考 apple-health-grafana 解析器)<br/>② 或接 **Open Wearables** 正規化 feed / Health Auto Export push(候選方向 — **包不重造**)<br/>③ 走同一條 redact→加密→FTS5 | Android/iOS 端取資料 → orchestrator node (Win) 處理;寫=claude;審=codex+agy | 需 iOS 裝置/操作者匯出 → 排在 Garmin 之後;避免重造 provider 正規化 |
+| **P-D** 🟣<br/>進階(opt-in 重) | 只有當真實使用證明 regex 漏接才做 | ① **Presidio** NER 後置(候選方向,`--ner` flag、僅本地模型)<br/>② OWASP LLM02–10 + live red-team<br/>③ ARX 式 differential-privacy 聚合匯出(候選參考) | a Mac node / orchestrator node (Win) 寫=codex→claude;審=opencode+agy | LLM-augmented de-id 本身可能漏 PHI → 必須本地模型 + 明確同意閘;否則不做 |
 
 ---
 

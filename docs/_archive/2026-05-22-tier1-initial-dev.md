@@ -17,7 +17,7 @@ Total: ~920 LOC source + ~250 LOC tests, stdlib-only on Python 3.10+.
 ## Smoke test command
 
 ```bash
-cd /Users/marklight/Documents/GitHub/phantom-secure-connector
+cd /path/to/phantom-secure-connector
 python3 -m pytest -v
 ```
 

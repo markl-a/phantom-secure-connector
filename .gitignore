@@ -66,3 +66,6 @@ private/
 **/real_phi_data/
 **/patient_data/
 **/healthkit_export/
+
+# Local dev task scratch files (machine-specific; never publish)
+TASK-*.md
