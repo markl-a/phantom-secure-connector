@@ -62,7 +62,7 @@ def assess(target: str, standards: list, mcp_summary: str | None = None,
            show_matches: bool = False) -> dict:
     """Run all engines over one file and return the unified result dict. Pure
     file read; no network, no LLM."""
-    text = Path(target).read_text(encoding="utf-8")
+    text = Path(target).read_text(encoding="utf-8", errors="replace")
     compliance = compliance_findings(target, standards, show_matches=show_matches)
     phi = phi_coverage(text)
     injection = injection_findings(text, show_matches=show_matches)
@@ -128,7 +128,14 @@ def assess_target(target: str, standards: list, mcp_summary: str | None = None,
     if p.is_dir():
         files = sorted(f for f in p.rglob("*")
                        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS)
-        results = [assess(str(f), standards, show_matches=show_matches) for f in files]
+        results = []
+        for f in files:
+            try:
+                results.append(assess(str(f), standards, show_matches=show_matches))
+            except (UnicodeDecodeError, ValueError, OSError):
+                # Skip a file we can't read/parse (e.g. malformed JSON) rather
+                # than aborting the whole directory assessment.
+                continue
         merged = merge_results(results, target, standards)
         if mcp_summary:
             merged["mcp"] = load_mcp_summary(mcp_summary)

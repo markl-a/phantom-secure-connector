@@ -19,3 +19,9 @@ def test_cli_clean_exits_0(tmp_path, capsys):
 
 def test_cli_missing_target_exits_2(tmp_path):
     assert main([str(tmp_path / "nope.csv"), "--standards", "hipaa"]) == 2
+
+
+def test_cli_malformed_json_exits_2(tmp_path):
+    p = tmp_path / "broken.json"
+    p.write_text("{ not valid json ", encoding="utf-8")
+    assert main([str(p), "--standards", "hipaa"]) == 2

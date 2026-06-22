@@ -100,3 +100,20 @@ def test_assess_target_single_file_unchanged(tmp_path):
     p = tmp_path / "x.txt"
     p.write_text("SSN 123-45-6789", encoding="utf-8")
     assert assess_target(str(p), standards=["hipaa"])["phi_coverage"]["SSN"] == 1
+
+
+def test_assess_target_dir_skips_undecodable_file(tmp_path):
+    # a good file with PHI + a binary/non-utf8 file that must NOT abort the scan
+    (tmp_path / "good.csv").write_text("name,ssn\nA,123-45-6789\n", encoding="utf-8")
+    (tmp_path / "bad.txt").write_bytes(b"\xff\xfe\x00\x01rubbish\x80\x81")
+    result = assess_target(str(tmp_path), standards=["hipaa"])
+    # good.csv still contributes; the undecodable file is skipped, not fatal
+    assert result["summary"]["phi_total"] >= 1
+
+
+def test_assess_single_undecodable_file_does_not_crash(tmp_path):
+    p = tmp_path / "bin.txt"
+    p.write_bytes(b"\xff\xfe\x00\x01\x80\x81")
+    # errors="replace" => no exception; returns a normal result dict
+    r = assess(str(p), standards=["hipaa"])
+    assert "summary" in r and "verdict" in r["summary"]

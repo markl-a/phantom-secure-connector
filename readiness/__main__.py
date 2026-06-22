@@ -33,7 +33,7 @@ def main(argv: list | None = None) -> int:
     try:
         result = assess_target(args.target, standards, mcp_summary=args.mcp_summary,
                                show_matches=args.show_matches)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, UnicodeDecodeError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
