@@ -4,6 +4,7 @@ default; this module never connects to anything (pure file read)."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from phi_redactor.redactor import redact
@@ -38,3 +39,51 @@ def compliance_findings(path: str, standards: list, show_matches: bool = False) 
         vios = scan_file(p, rs)
         out[std] = [v.to_dict(show_matches=show_matches) for v in vios]
     return out
+
+
+def load_mcp_summary(path: str) -> list:
+    """Parse a secops MCP-scanner summary.json into a flat risk list."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    out = []
+    for f in data.get("findings", []):
+        out.append({
+            "severity": f.get("severity"),
+            "severity_name": f.get("severity_name"),
+            "rule_id": f.get("rule_id"),
+            "server": f.get("server"),
+            "tool": f.get("tool"),
+            "owasp": f.get("owasp"),
+            "message": f.get("message"),
+        })
+    return out
+
+
+def assess(target: str, standards: list, mcp_summary: str | None = None,
+           show_matches: bool = False) -> dict:
+    """Run all engines over one file and return the unified result dict. Pure
+    file read; no network, no LLM."""
+    text = Path(target).read_text(encoding="utf-8")
+    compliance = compliance_findings(target, standards, show_matches=show_matches)
+    phi = phi_coverage(text)
+    injection = injection_findings(text, show_matches=show_matches)
+    mcp = load_mcp_summary(mcp_summary) if mcp_summary else []
+    compliance_total = sum(len(v) for v in compliance.values())
+    phi_total = sum(phi.values())
+    injection_total = len(injection)
+    mcp_total = len(mcp)
+    total = compliance_total + phi_total + injection_total + mcp_total
+    return {
+        "target": target,
+        "standards": list(standards),
+        "compliance": compliance,
+        "phi_coverage": phi,
+        "injection": injection,
+        "mcp": mcp,
+        "summary": {
+            "compliance_total": compliance_total,
+            "phi_total": phi_total,
+            "injection_total": injection_total,
+            "mcp_total": mcp_total,
+            "verdict": "findings" if total else "clean",
+        },
+    }
