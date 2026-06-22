@@ -87,3 +87,53 @@ def assess(target: str, standards: list, mcp_summary: str | None = None,
             "verdict": "findings" if total else "clean",
         },
     }
+
+
+SUPPORTED_EXTS = {".csv", ".json", ".txt", ".md"}
+
+
+def merge_results(results: list, target: str, standards: list) -> dict:
+    """Merge per-file results into one. PHI counts sum per label; compliance,
+    injection, mcp lists concatenate; verdict recomputed."""
+    phi: dict = {}
+    compliance: dict = {}
+    injection: list = []
+    mcp: list = []
+    for r in results:
+        for k, n in r["phi_coverage"].items():
+            phi[k] = phi.get(k, 0) + n
+        for std, vios in r["compliance"].items():
+            compliance.setdefault(std, []).extend(vios)
+        injection.extend(r["injection"])
+        mcp.extend(r["mcp"])
+    compliance_total = sum(len(v) for v in compliance.values())
+    phi_total = sum(phi.values())
+    total = compliance_total + phi_total + len(injection) + len(mcp)
+    return {
+        "target": target, "standards": list(standards),
+        "compliance": compliance, "phi_coverage": phi,
+        "injection": injection, "mcp": mcp,
+        "summary": {
+            "compliance_total": compliance_total, "phi_total": phi_total,
+            "injection_total": len(injection), "mcp_total": len(mcp),
+            "verdict": "findings" if total else "clean",
+        },
+    }
+
+
+def assess_target(target: str, standards: list, mcp_summary: str | None = None,
+                  show_matches: bool = False) -> dict:
+    """Assess a single file or a directory (recursed for SUPPORTED_EXTS)."""
+    p = Path(target)
+    if p.is_dir():
+        files = sorted(f for f in p.rglob("*")
+                       if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS)
+        results = [assess(str(f), standards, show_matches=show_matches) for f in files]
+        merged = merge_results(results, target, standards)
+        if mcp_summary:
+            merged["mcp"] = load_mcp_summary(mcp_summary)
+            merged["summary"]["mcp_total"] = len(merged["mcp"])
+            if merged["mcp"]:
+                merged["summary"]["verdict"] = "findings"
+        return merged
+    return assess(target, standards, mcp_summary=mcp_summary, show_matches=show_matches)
