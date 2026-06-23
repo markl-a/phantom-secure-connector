@@ -299,6 +299,28 @@ class MCPStdioClient:
                 f"injection patterns: {dict(flagged)}"
             )
 
+    def _scan_response(self, result: Any) -> List[Dict[str, Any]]:
+        """Recursively scan every string field of a tool response for injection,
+        returning masked findings each tagged with framework references. More
+        precise than scanning one json.dumps blob."""
+        findings_out: List[Dict[str, Any]] = []
+
+        def _walk(value: Any) -> None:
+            if isinstance(value, str):
+                for f in scan_injection(value):
+                    d = f.to_dict()
+                    d["frameworks"] = frameworks_for_finding_family(d["family"])
+                    findings_out.append(d)
+            elif isinstance(value, dict):
+                for v in value.values():
+                    _walk(v)
+            elif isinstance(value, list):
+                for v in value:
+                    _walk(v)
+
+        _walk(result)
+        return findings_out
+
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Invoke ``name`` on the external server — GATED.
 
@@ -334,24 +356,22 @@ class MCPStdioClient:
 
         result = self._request("tools/call", {"name": name, "arguments": clean_args})
         if self.scan_responses:
-            response_text = json.dumps(result, default=str)
-            findings = scan_injection(response_text)
+            findings = self._scan_response(result)
             if findings:
                 print(
                     f"[gate] inbound injection flagged: {len(findings)} finding(s) in "
                     f"response from tool {name!r}",
                     file=sys.stderr,
                 )
-                masked = [f.to_dict() for f in findings]
                 if self.scan_mode == "block":
                     raise MCPClientError(
                         f"inbound injection flagged {len(findings)} finding(s) "
-                        f"in response from tool {name!r}: {masked}"
+                        f"in response from tool {name!r}: {findings}"
                     )
                 if isinstance(result, dict):
-                    result["_injection_findings"] = masked
+                    result["_injection_findings"] = findings
                 else:
-                    result = {"result": result, "_injection_findings": masked}
+                    result = {"result": result, "_injection_findings": findings}
 
         return result
 
