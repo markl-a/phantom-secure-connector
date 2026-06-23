@@ -34,6 +34,8 @@ from typing import Any, Callable, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from phi_redactor.redactor import redact, RedactionMap  # noqa: E402
 from compliance_checker.checker import load_standard, scan_records, scan_file, RULES_DIR  # noqa: E402
+from mcp_bridge.capabilities import Capability, CapabilityPolicy  # noqa: E402
+from mcp_bridge.frameworks import frameworks_for_capabilities  # noqa: E402
 
 PHANTOM_STATUS_URL = "http://127.0.0.1:7878/api/status"
 
@@ -64,6 +66,7 @@ class Tool:
     description: str
     input_schema: Dict[str, Any]
     handler: Callable[[Dict[str, Any]], Dict[str, Any]]
+    capabilities: frozenset = field(default_factory=frozenset)
 
 
 # ----------------------------- tool handlers --------------------------------
@@ -250,6 +253,7 @@ DEFAULT_TOOLS: List[Tool] = [
         description="Get the local phantom coordinator status snapshot.",
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=phantom_status,
+        capabilities=frozenset({Capability.NETWORK}),
     ),
     Tool(
         name="phantom_fts5_search",
@@ -260,6 +264,7 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["query"],
         },
         handler=phantom_fts5_search,
+        capabilities=frozenset({Capability.SUBPROCESS}),
     ),
     Tool(
         name="phantom_event_capture",
@@ -270,6 +275,7 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["text"],
         },
         handler=phantom_event_capture,
+        capabilities=frozenset({Capability.SUBPROCESS, Capability.WRITE}),
     ),
     Tool(
         name="redact_phi",
@@ -283,12 +289,14 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["text"],
         },
         handler=redact_phi,
+        capabilities=frozenset({Capability.PURE}),
     ),
     Tool(
         name="list_standards",
         description="List the available compliance standards (hipaa/gdpr/pci-dss/tw-pii).",
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=list_standards,
+        capabilities=frozenset({Capability.PURE}),
     ),
     Tool(
         name="compliance_scan",
@@ -299,6 +307,7 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["text", "standard"],
         },
         handler=compliance_scan,
+        capabilities=frozenset({Capability.PURE}),
     ),
     Tool(
         name="compliance_scan_file",
@@ -309,6 +318,7 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["path", "standard"],
         },
         handler=compliance_scan_file,
+        capabilities=frozenset({Capability.FILESYSTEM}),
     ),
     Tool(
         name="mask_text",
@@ -319,6 +329,7 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["text"],
         },
         handler=mask_text,
+        capabilities=frozenset({Capability.PURE}),
     ),
     Tool(
         name="restore_text",
@@ -329,6 +340,7 @@ DEFAULT_TOOLS: List[Tool] = [
             "required": ["handle", "redacted"],
         },
         handler=restore_text,
+        capabilities=frozenset({Capability.PHI_REVERSE}),
     ),
 ]
 
@@ -336,6 +348,7 @@ DEFAULT_TOOLS: List[Tool] = [
 @dataclass
 class PhantomMCPServer:
     tools: List[Tool] = field(default_factory=lambda: list(DEFAULT_TOOLS))
+    policy: CapabilityPolicy = field(default_factory=CapabilityPolicy)
 
     def tool_names(self) -> List[str]:
         return [t.name for t in self.tools]
@@ -363,6 +376,8 @@ class PhantomMCPServer:
                             "name": t.name,
                             "description": t.description,
                             "inputSchema": t.input_schema,
+                            "capabilities": sorted(c.value for c in t.capabilities),
+                            "frameworks": frameworks_for_capabilities(t.capabilities),
                         }
                         for t in self.tools
                     ]
@@ -380,6 +395,22 @@ class PhantomMCPServer:
                     "jsonrpc": "2.0",
                     "id": rid,
                     "error": {"code": -32601, "message": "unknown tool requested"},
+                }
+            # Capability gate (least privilege): a tool whose required
+            # capabilities are not ALL granted by the active policy is DENIED —
+            # the handler never runs. The error message is static (only the
+            # tool's own declared capability names, never caller-controlled
+            # input), so it cannot leak PHI. -32040 = capability denied.
+            missing = self.policy.missing(tool.capabilities)
+            if missing:
+                denied = ", ".join(sorted(c.value for c in missing))
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rid,
+                    "error": {
+                        "code": -32040,
+                        "message": f"capability denied: tool requires un-granted [{denied}]",
+                    },
                 }
             # Guard the handler: a single bad call (bad args, an unexpected
             # handler bug) must become a JSON-RPC error, never an exception that

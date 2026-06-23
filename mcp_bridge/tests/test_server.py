@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mcp_bridge.server import PhantomMCPServer  # noqa: E402
+from mcp_bridge.capabilities import Capability, CapabilityPolicy  # noqa: E402,F401
 
 
 def test_tools_registered():
@@ -50,7 +51,9 @@ def test_call_unknown_tool_returns_error():
 
 
 def test_fts5_search_real_index():
-    srv = PhantomMCPServer()
+    # phantom_fts5_search requires the SUBPROCESS capability; grant it so the
+    # tool runs (the gate itself is covered by the dedicated policy tests).
+    srv = PhantomMCPServer(policy=CapabilityPolicy.from_grants(["proc"]))
     resp = srv.handle({
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
         "params": {"name": "phantom_fts5_search", "arguments": {"query": "hi"}},
@@ -95,8 +98,8 @@ def test_redact_phi_mask_mode_reports_count():
 
 def test_phantom_status_handles_unreachable():
     # In a test env there's no phantom server on :7878 — handler must degrade
-    # gracefully, not raise.
-    srv = PhantomMCPServer()
+    # gracefully, not raise. phantom_status needs the NETWORK capability.
+    srv = PhantomMCPServer(policy=CapabilityPolicy.from_grants(["net"]))
     resp = srv.handle({
         "jsonrpc": "2.0", "id": 3, "method": "tools/call",
         "params": {"name": "phantom_status", "arguments": {}},
@@ -110,7 +113,9 @@ def test_phantom_status_handles_unreachable():
 
 
 def test_event_capture_missing_text():
-    srv = PhantomMCPServer()
+    # phantom_event_capture requires SUBPROCESS + WRITE; grant both so the
+    # handler runs and we exercise its missing-text path (not the gate).
+    srv = PhantomMCPServer(policy=CapabilityPolicy.from_grants(["proc", "write"]))
     resp = srv.handle({
         "jsonrpc": "2.0", "id": 4, "method": "tools/call",
         "params": {"name": "phantom_event_capture", "arguments": {}},
@@ -425,7 +430,9 @@ def test_compliance_scan_file_flags_planted_pii(tmp_path):
 
 
 def test_mask_then_restore_round_trips_byte_exact():
-    srv = PhantomMCPServer()
+    # restore_text requires the PHI_REVERSE capability; grant it for the
+    # round-trip (mask_text is PURE and always allowed).
+    srv = PhantomMCPServer(policy=CapabilityPolicy.from_grants(["phi_reverse"]))
     original = "patient SSN 123-45-6789 email alice@example.com"
     m = srv.handle({"jsonrpc": "2.0", "id": 44, "method": "tools/call",
                     "params": {"name": "mask_text", "arguments": {"text": original}}})
@@ -442,8 +449,41 @@ def test_mask_then_restore_round_trips_byte_exact():
 
 
 def test_restore_text_unknown_handle_errors():
-    srv = PhantomMCPServer()
+    # restore_text requires the PHI_REVERSE capability to reach the handler.
+    srv = PhantomMCPServer(policy=CapabilityPolicy.from_grants(["phi_reverse"]))
     resp = srv.handle({"jsonrpc": "2.0", "id": 46, "method": "tools/call",
                        "params": {"name": "restore_text",
                                   "arguments": {"handle": "red-999999", "redacted": "x"}}})
     assert resp["result"]["ok"] is False
+
+
+def _call(server, name, args=None):
+    return server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                          "params": {"name": name, "arguments": args or {}}})
+
+
+def test_default_policy_denies_network_tool():
+    resp = _call(PhantomMCPServer(), "phantom_status")
+    assert "error" in resp and resp["error"]["code"] == -32040
+    assert "capability" in resp["error"]["message"].lower()
+
+
+def test_default_policy_allows_pure_tool():
+    resp = _call(PhantomMCPServer(), "redact_phi", {"text": "SSN 123-45-6789"})
+    assert "result" in resp and resp["result"]["ok"] is True
+
+
+def test_grant_network_allows_status_tool():
+    server = PhantomMCPServer(policy=CapabilityPolicy.from_grants(["net"]))
+    resp = _call(server, "phantom_status")
+    assert "result" in resp
+
+
+def test_tools_list_exposes_capabilities_and_frameworks():
+    resp = PhantomMCPServer().handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    tools = {t["name"]: t for t in resp["result"]["tools"]}
+    assert "capabilities" in tools["phantom_event_capture"]
+    assert set(tools["phantom_event_capture"]["capabilities"]) >= {"subprocess", "write"}
+    assert "frameworks" in tools["phantom_event_capture"]
+    assert any("OWASP" in r for r in tools["phantom_event_capture"]["frameworks"])
+    assert tools["redact_phi"]["capabilities"] == ["pure"]
