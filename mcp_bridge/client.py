@@ -46,6 +46,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from phi_redactor.redactor import RedactionMap, redact  # noqa: E402
 from secops_simulator import scan as scan_injection  # noqa: E402
+from mcp_bridge.frameworks import frameworks_for_finding_family  # noqa: E402
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -145,6 +146,7 @@ class MCPStdioClient:
     allowlist: Tuple[str, ...] = DEFAULT_ALLOWLIST
     timeout: float = 30.0
     scan_responses: bool = True
+    scan_discovery: bool = True  # scan advertised tool name+description for poisoning
     scan_mode: str = "block"  # "block" | "warn"
     proc: Optional[subprocess.Popen] = field(default=None, init=False)
     _next_id: int = field(default=0, init=False)
@@ -264,7 +266,38 @@ class MCPStdioClient:
         return result
 
     def list_tools(self) -> List[Dict[str, Any]]:
-        return self._request("tools/list").get("tools", [])
+        tools = self._request("tools/list").get("tools", [])
+        if self.scan_discovery:
+            self._scan_discovery(tools)
+        return tools
+
+    def _scan_discovery(self, tools: List[Dict[str, Any]]) -> None:
+        """Scan each advertised tool's name+description for prompt-injection /
+        tool-poisoning. block -> raise; warn -> log findings, return."""
+        flagged: List[Tuple[str, List[Dict[str, Any]]]] = []
+        for t in tools:
+            text = f"{t.get('name', '')} {t.get('description', '')}"
+            findings = scan_injection(text)
+            if findings:
+                masked = []
+                for f in findings:
+                    d = f.to_dict()
+                    d["frameworks"] = frameworks_for_finding_family(d["family"])
+                    masked.append(d)
+                flagged.append((str(t.get("name", "")), masked))
+        if not flagged:
+            return
+        for name, masked in flagged:
+            print(
+                f"[gate] discovery: tool {name!r} description flagged "
+                f"{len(masked)} injection finding(s)",
+                file=sys.stderr,
+            )
+        if self.scan_mode == "block":
+            raise MCPClientError(
+                f"tool-poisoning: {len(flagged)} advertised tool(s) carry "
+                f"injection patterns: {dict(flagged)}"
+            )
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Invoke ``name`` on the external server — GATED.
