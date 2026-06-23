@@ -104,12 +104,12 @@ pyproject.toml      (MOD)  [project.optional-dependencies] mcp-sdk;testpaths 補
 4. **capability 預設過鬆/過緊** → 預設收斂(`{PURE, FILESYSTEM}`)+ `--grant` 顯式放寬;附「拒絕高敏感工具」「放寬後放行」雙向測試。
 5. **守 stdlib-only** → 新模組只 import stdlib + 既有套件;SDK adapter 隔離在 try/except。
 
-## 8. 待確認 / owner-gated
+## 8. owner 定案(2026-06-23,採建議預設)
 
-- **discovery 掃描預設**:`block`(建議,fail-closed)vs `warn`。
-- **Capability 詞彙粒度**:6 個 enum(建議,夠用)是否合適。
-- **`default granted` 集合**:建議 `{PURE, FILESYSTEM}`;是否要把 `NETWORK` 也預設放(`phantom_status` 是唯讀且常用)。
-- **`mcp` SDK pin 版本**:落地時釘一個已知穩定版(避免 churn)。
+- **discovery 掃描預設 = `block`**(fail-closed;可 `--scan-mode warn` 切換)。
+- **Capability 詞彙 = 6 個 enum**(`NETWORK`/`FILESYSTEM`/`SUBPROCESS`/`WRITE`/`PHI_REVERSE`/`PURE`)。
+- **`default granted` = `{PURE, FILESYSTEM}`**(最小權限;`phantom_status` 的 `NETWORK` 預設擋,需 `--grant net` 放寬 —— 維持 fail-closed)。
+- **`mcp` SDK pin = `mcp>=1.0`**(floor;extras-gated + parity 測試把關,升級只影響 opt-in 使用者)。
 
 ## 9. Phase C+(本 spec 外)
 
