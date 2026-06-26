@@ -26,9 +26,12 @@ Homepage = "https://github.com/markl-a/phantom-secure-connector"
 # Outbound MCP client with the PHI-redaction + allowlist security gate.
 secure-mcp = "mcp_bridge.client:main"
 phantom-secure-connector = "mcp_bridge.client:main"
+phantom-secure-demo-loop = "readiness.demo_loop:main"
+phantom-secure-transform = "readiness.transform_pipeline:main"
+phantom-secure-guard-scenario = "readiness.guard_scenario:main"
 
 [tool.setuptools]
-packages = ["phi_redactor", "mcp_bridge", "compliance_checker", "secops_simulator"]
+packages = ["phi_redactor", "mcp_bridge", "compliance_checker", "secops_simulator", "readiness"]
 
 [tool.pytest.ini_options]
 testpaths = [
