@@ -1,7 +1,7 @@
 # Open Source Readiness
 
 Project: `phantom-secure-connector`
-Current phase: P3 synthetic data-plane guard scenario verified
+Current phase: P4 installable public release candidate verified
 Master plan: `../../PHANTOM-SATELLITES-OPEN-SOURCE-MASTER-PLAN.md`
 
 ## Shipped Features
@@ -19,6 +19,7 @@ Master plan: `../../PHANTOM-SATELLITES-OPEN-SOURCE-MASTER-PLAN.md`
 - CLI entrypoint: `phantom-secure-transform`, mapped to `readiness.transform_pipeline:main`.
 - P3 data-plane guard scenario contract is documented in `docs/DATA_PLANE_GUARD_SCENARIO.md`.
 - CLI entrypoint: `phantom-secure-guard-scenario`, mapped to `readiness.guard_scenario:main`.
+- `pyproject.toml` defines installable package metadata for version `0.1.0a0`, Apache-2.0 license metadata, Python `>=3.10`, classifiers, project URLs, and packaged compliance rule TOML files.
 - Test suite baseline is green after fixing an invalid Taiwan national ID test fixture and adding public contract tests.
 
 ## Planned Or Deferred Features
@@ -78,7 +79,7 @@ P2 transform pipeline result:
 Targeted: 92 passed in 2.59s
 Full: 194 passed, 2 skipped in 6.97s
 Collect-only: 196 tests collected
-Packaging: python -m pip install -e . --dry-run --no-deps would install phantom-secure-connector-0.1.0
+Packaging: python -m pip install -e . --dry-run --no-deps would install phantom-secure-connector-0.1.0a0
 CLI help: python -m readiness.transform_pipeline --help OK
 CLI smoke: python -m readiness.transform_pipeline --source <csv> --out <temp> wrote manifest.json
 ```
@@ -134,7 +135,7 @@ Agy review: NO BLOCKERS
 - P2 transform targeted `python -m pytest readiness/tests/test_transform_pipeline_contract.py readiness/tests/test_demo_loop_contract.py readiness/tests/test_open_source_contract.py readiness/tests/test_cli.py compliance_checker/tests/test_checker.py phi_redactor/tests/test_redactor.py mcp_bridge/tests/test_client.py secops_simulator/tests/test_detector.py -q`: 92 passed.
 - P2 transform final `python -m pytest -q`: 194 passed, 2 skipped.
 - P2 transform collect-only `python -m pytest --collect-only -q`: 196 tests collected.
-- P2 transform packaging `python -m pip install -e . --dry-run --no-deps`: would install `phantom-secure-connector-0.1.0`.
+- P2 transform packaging `python -m pip install -e . --dry-run --no-deps`: would install `phantom-secure-connector-0.1.0a0`.
 - `python -m mcp_bridge.client --help`: help OK.
 - `python -m readiness.demo_loop --out <temp> --standard hipaa`: wrote deterministic artifact bundle manifest.
 - `python -m readiness.transform_pipeline --help`: help OK.
@@ -201,3 +202,25 @@ Evidence:
 - `python -m pytest -q`: 203 passed, 2 skipped.
 
 Remaining P4 work: none for the approved release-candidate tag.
+
+## P4 Release-Prep Slice 5
+
+Status: installable public package gate added and ready with documented limitations.
+
+Evidence:
+- `pyproject.toml` defines `phantom-secure-connector` version `0.1.0a0`, Apache-2.0 license metadata, Python `>=3.10`, classifiers, project URLs, dev/MCP extras, scripts, and compliance rule package data.
+- `.github/workflows/ci.yml` now runs editable install, install dry-run, wheel build, deterministic demo/transform/guard smoke, full `python -m pytest -q`, and release-prep gate.
+- `readiness/tests/test_packaging.py` verifies package metadata, public scripts, packaged rule files, and module help.
+- Current verification on 2026-06-27 is recorded in `docs/FINAL_RELEASE_AUDIT.md`.
+- `python -m pytest readiness/tests/test_packaging.py readiness/tests/test_release_prep_contract.py readiness/tests/test_open_source_contract.py -q`: 16 passed.
+- `python -m pytest -q`: 208 passed, 2 skipped.
+- `python -m pip install -e . --dry-run --no-deps`: would install `phantom-secure-connector-0.1.0a0`.
+- `python -m pip wheel . --no-deps -w <temp>`: built `phantom_secure_connector-0.1.0a0-py3-none-any.whl`.
+- Wheel package-data verification: `compliance_checker/rules/hipaa.toml`, `gdpr.toml`, `pci-dss.toml`, and `tw-pii.toml` are present.
+- `python -m pip install -e . --no-deps`: installed `phantom-secure-connector-0.1.0a0`.
+- Installed console script help for `phantom-secure-demo-loop`, `phantom-secure-transform`, and `phantom-secure-guard-scenario`: OK.
+- Deterministic demo/transform/guard smoke wrote `manifest.json` with `synthetic_only=true`, `raw_phi_in_public_artifacts=false`, `external_network=false`, `mcp_live_bridge=false`, and `legal_certification=false`.
+- High-confidence secret scan: `high_conf_secret_hits=0`.
+- Root integration after this project: usage smoke 10/10, agent compatibility 40/40, root pytest 85 passed.
+
+Remaining P4 work: none for the installable public release-candidate gate; live MCP bridge and real regulated-data connectors still require separate PHI, credential, and safety review.

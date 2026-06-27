@@ -4,13 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phantom-secure-connector"
-version = "0.1.0"
+version = "0.1.0a0"
 description = "PHI de-identification + compliance + red/blue-team sim + MCP bridge (client & server) for the phantom-mesh security suite. Stdlib-only."
 readme = "README.md"
-requires-python = ">=3.8"
-license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+license = "Apache-2.0"
 authors = [{ name = "markl-a" }]
 keywords = ["phi", "redaction", "hipaa", "mcp", "security", "phantom-mesh"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 
 # Stdlib-only by design — no runtime dependencies.
 dependencies = []
@@ -21,6 +35,9 @@ mcp-sdk = ["mcp>=1.0"]
 
 [project.urls]
 Homepage = "https://github.com/markl-a/phantom-secure-connector"
+Documentation = "https://github.com/markl-a/phantom-secure-connector#readme"
+Repository = "https://github.com/markl-a/phantom-secure-connector"
+Issues = "https://github.com/markl-a/phantom-secure-connector/issues"
 
 [project.scripts]
 # Outbound MCP client with the PHI-redaction + allowlist security gate.
@@ -32,6 +49,9 @@ phantom-secure-guard-scenario = "readiness.guard_scenario:main"
 
 [tool.setuptools]
 packages = ["phi_redactor", "mcp_bridge", "compliance_checker", "secops_simulator", "readiness"]
+
+[tool.setuptools.package-data]
+compliance_checker = ["rules/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = [

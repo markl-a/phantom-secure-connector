@@ -10,6 +10,7 @@
 
 ```powershell
 python -m pip install -e .[dev]
+python -m pip install -e . --dry-run --no-deps
 python -m pytest -q
 python -m mcp_bridge.client --help
 ```

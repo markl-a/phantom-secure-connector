@@ -255,7 +255,7 @@ class MCPStdioClient:
                 {
                     "protocolVersion": MCP_PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "phantom-secure-connector", "version": "0.1.0"},
+                    "clientInfo": {"name": "phantom-secure-connector", "version": "0.1.0a0"},
                 },
             )
         except MCPClientError as exc:
