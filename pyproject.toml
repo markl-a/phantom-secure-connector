@@ -31,6 +31,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+mcp = ["mcp>=1.0"]
 mcp-sdk = ["mcp>=1.0"]
 
 [project.urls]
@@ -46,6 +47,7 @@ phantom-secure-connector = "mcp_bridge.client:main"
 phantom-secure-demo-loop = "readiness.demo_loop:main"
 phantom-secure-transform = "readiness.transform_pipeline:main"
 phantom-secure-guard-scenario = "readiness.guard_scenario:main"
+phantom-secure-connector-mcp = "mcp_bridge.sdk_adapter:main"
 
 [tool.setuptools]
 packages = ["phi_redactor", "mcp_bridge", "compliance_checker", "secops_simulator", "readiness"]

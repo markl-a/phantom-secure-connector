@@ -61,3 +61,9 @@ def build_sdk_server(policy: Any = None) -> Any:
             return _run
         app.add_tool(_make(), name=tool.name, description=tool.description)
     return app
+
+
+def main() -> None:
+    """Run the optional SDK-backed MCP server over stdio."""
+    app = build_sdk_server()
+    app.run()
