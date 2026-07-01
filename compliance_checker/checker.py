@@ -17,6 +17,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Pattern
 
+from .validators import luhn_valid
+
 RULES_DIR = Path(__file__).resolve().parent / "rules"
 
 
@@ -189,6 +191,46 @@ def scan_records(
                         )
                     )
     return out
+
+
+def filter_luhn_valid(violations: List[Violation]) -> List[Violation]:
+    """Drop PAN-shaped violations that fail the Luhn checksum.
+
+    The rule files match on shape only (scheme prefix + length) — see
+    :mod:`compliance_checker.validators` — so an ordinary 12+ digit number
+    that merely looks like a card (a long invoice ID, a padded account
+    number) can flag as a false positive. This is an opt-in post-filter a
+    caller runs over already-scanned ``violations``: a match is treated as
+    "PAN-shaped" once it has at least 12 digit characters (a PAN is always
+    >= 12 digits), and is dropped unless it also passes :func:`luhn_valid`.
+    Anything with fewer than 12 digits — a Taiwan ID, a short numeric code,
+    ordinary PII — is not PAN-shaped and passes through unchanged; this is a
+    targeted PAN filter, not a re-validation of every rule's matches.
+    """
+    kept: List[Violation] = []
+    for v in violations:
+        # Only apply the Luhn checksum filter to actual PAN/credit card rule matches.
+        # Other identifiers (e.g. Taiwan NHI cards, international phone numbers,
+        # account numbers) are not credit cards and must pass through unchanged.
+        rule_id_lower = v.rule_id.lower()
+        rule_label_lower = v.rule_label.lower()
+        is_pan = (
+            v.standard == "PCI-DSS" and v.rule_id not in ("pci_cvv", "pci_expiry")
+        ) or (
+            v.standard == "GDPR" and v.rule_id == "gdpr_credit_card"
+        ) or (
+            "credit_card" in rule_id_lower
+            or "pan" in rule_id_lower
+            or "credit card" in rule_label_lower
+            or "(pan)" in rule_label_lower
+        )
+
+        if is_pan:
+            digit_count = sum(1 for ch in v.matched if ch.isdigit())
+            if digit_count >= 12 and not luhn_valid(v.matched):
+                continue  # PAN-shaped but fails Luhn — drop the false positive
+        kept.append(v)
+    return kept
 
 
 def _walk_json(obj, path: str = "$"):

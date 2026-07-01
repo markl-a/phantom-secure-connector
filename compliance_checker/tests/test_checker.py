@@ -11,6 +11,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from compliance_checker.checker import (  # noqa: E402
+    Violation,
+    filter_luhn_valid,
     load_standard,
     scan_file,
     scan_records,
@@ -256,3 +258,51 @@ def test_cli_html_report_e2e_masks_pii_and_escapes(tmp_path):
     # PII masked by default: raw value absent, full-length mask present
     assert raw_email not in report
     assert "*" * len(raw_email) in report
+
+
+def _pan_violation(matched: str) -> Violation:
+    return Violation(
+        rule_id="pci_dss_01_pan", rule_label="PAN", standard="PCI-DSS",
+        location="row=0 col=card", matched=matched,
+    )
+
+
+def test_filter_luhn_valid_drops_pan_shaped_match_failing_checksum():
+    # Visa test PAN with the last digit flipped — 16 digits (PAN-shaped) but
+    # fails the Luhn checksum, so it's the false positive the filter targets.
+    bad_pan = _pan_violation("4111111111111112")
+    assert filter_luhn_valid([bad_pan]) == []
+
+
+def test_filter_luhn_valid_keeps_pan_shaped_match_passing_checksum():
+    # Standard Visa test number — checksum-valid.
+    good_pan = _pan_violation("4111111111111111")
+    assert filter_luhn_valid([good_pan]) == [good_pan]
+
+
+def test_filter_luhn_valid_passes_non_pan_shaped_violations_through():
+    # Fewer than 12 digits (a 9-digit SSN) — not PAN-shaped, so it passes
+    # through unchanged regardless of whether it would pass Luhn.
+    ssn = Violation(
+        rule_id="hipaa_07_ssn", rule_label="SSN", standard="HIPAA",
+        location="row=0 col=ssn", matched="123-45-6789",
+    )
+    assert filter_luhn_valid([ssn]) == [ssn]
+
+
+def test_filter_luhn_valid_passes_non_pan_but_long_violations_through():
+    # Violations from non-PAN rules that happen to have >=12 digits (e.g. Taiwan NHI
+    # card numbers or international phone numbers) must pass through unchanged.
+    nhi = Violation(
+        rule_id="tw_nhi_card", rule_label="Taiwan NHI card number (健保卡號)", standard="TW-PII",
+        location="row=0 col=nhi", matched="健保卡號: 123456789012",
+    )
+    phone = Violation(
+        rule_id="gdpr_phone_intl", rule_label="International phone number", standard="GDPR",
+        location="row=0 col=phone", matched="+44 1234 567890",
+    )
+    account = Violation(
+        rule_id="hipaa_10_account", rule_label="Account number", standard="HIPAA",
+        location="row=0 col=acct", matched="ACCT-123456789012",
+    )
+    assert filter_luhn_valid([nhi, phone, account]) == [nhi, phone, account]
