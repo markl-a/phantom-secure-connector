@@ -178,11 +178,15 @@ SIGNATURES: list[Signature] = [
 
 
 def scan(text: str) -> list[Finding]:
-    """Scan text and return prompt-injection findings."""
+    """Scan text and return prompt-injection findings, in document order."""
     findings: list[Finding] = []
     for family, label, regex in SIGNATURES:
         for match in regex.finditer(text):
             findings.append(Finding(family, label, match.group(0), match.span()))
+    # SIGNATURES is scanned signature-by-signature, so findings arrive grouped
+    # by which signature matched, not by where they occur — sort by span
+    # (start, end) so a later signature's earlier match still returns first.
+    findings.sort(key=lambda f: f.span)
     return findings
 
 
