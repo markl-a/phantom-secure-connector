@@ -62,4 +62,5 @@ testpaths = [
     "compliance_checker/tests",
     "secops_simulator/tests",
     "readiness/tests",
+    "anomaly_detector/tests",
 ]
