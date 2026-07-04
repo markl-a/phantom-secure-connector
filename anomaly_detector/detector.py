@@ -21,6 +21,8 @@ class AnomalyDetector:
         window: int = 5,
         threshold: float = 3.0,
     ) -> None:
+        if isinstance(window, bool) or not isinstance(window, int):
+            raise TypeError("window must be an int")
         if window < 2:
             raise ValueError("window must be at least 2")
         if threshold <= 0:
@@ -42,19 +44,9 @@ class AnomalyDetector:
             value = self._value(record)
             if len(history) >= self.window:
                 baseline = history[-self.window :]
-                score = self._z_score(value, baseline)
-                if score >= self.threshold:
-                    findings.append(
-                        {
-                            "index": index,
-                            "record": record,
-                            "reason": (
-                                f"{self.field} rolling z-score {score:.2f} "
-                                f"exceeds threshold {self.threshold:.2f}"
-                            ),
-                            "score": score,
-                        }
-                    )
+                finding = self._finding(index, record, value, baseline)
+                if finding is not None:
+                    findings.append(finding)
             history.append(value)
 
         return findings
@@ -68,10 +60,38 @@ class AnomalyDetector:
             raise TypeError(f"record field {self.field!r} must be numeric")
         return float(value)
 
-    def _z_score(self, value: float, baseline: List[float]) -> float:
+    def _finding(
+        self,
+        index: int,
+        record: Mapping[str, object],
+        value: float,
+        baseline: List[float],
+    ) -> Dict[str, object] | None:
         mean = statistics.mean(baseline)
         stdev = statistics.pstdev(baseline)
         deviation = abs(value - mean)
         if stdev == 0:
-            return 0.0 if deviation == 0 else deviation
-        return deviation / stdev
+            if deviation == 0:
+                return None
+            return {
+                "index": index,
+                "record": record,
+                "reason": (
+                    f"{self.field} value deviates from a constant baseline "
+                    f"by {deviation:.2f} (baseline {mean:.2f})"
+                ),
+                "score": deviation,
+            }
+
+        score = deviation / stdev
+        if score < self.threshold:
+            return None
+        return {
+            "index": index,
+            "record": record,
+            "reason": (
+                f"{self.field} rolling z-score {score:.2f} "
+                f"exceeds threshold {self.threshold:.2f}"
+            ),
+            "score": score,
+        }

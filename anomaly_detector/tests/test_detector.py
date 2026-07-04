@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add project root to path so `import anomaly_detector` works when pytest is
 # run from any cwd.
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,3 +45,27 @@ def test_spike_stream_flags_the_spike():
     assert findings[0]["score"] >= 3.0
     assert "rolling z-score" in findings[0]["reason"]
     assert "latency_ms" in findings[0]["reason"]
+
+
+def test_constant_baseline_flags_differing_value_without_z_score_reason():
+    records = [{"latency_ms": value} for value in (100, 100, 100, 100, 101)]
+
+    detector = AnomalyDetector(field="latency_ms", window=4, threshold=3.0)
+    findings = detector.scan(records)
+
+    assert len(findings) == 1
+    assert findings[0]["index"] == 4
+    assert findings[0]["record"] == records[4]
+    assert findings[0]["score"] == 1.0
+    assert "constant baseline" in findings[0]["reason"]
+    assert "rolling z-score" not in findings[0]["reason"]
+
+
+def test_non_int_window_raises_type_error():
+    with pytest.raises(TypeError, match="window must be an int"):
+        AnomalyDetector(window=2.5)
+
+
+def test_bool_window_raises_type_error():
+    with pytest.raises(TypeError, match="window must be an int"):
+        AnomalyDetector(window=True)
