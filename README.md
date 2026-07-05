@@ -6,6 +6,27 @@
 
 > PHI 去識別 + 合規掃描 + 入站注入閘 + MCP 橋接 —— phantom-mesh 的資料平面守門員。stdlib-only、雙語(台灣 + 西方識別碼)。敏感資料安全進來、可信工具安全出去、行為被紅藍隊持續驗證。
 
+For the honest shipped-vs-roadmap status of every module, see
+[FEATURE-AUDIT.md](FEATURE-AUDIT.md).
+
+## Install
+
+```powershell
+# core (stdlib-only engines + stdlib JSON-RPC MCP server), with test tooling
+python -m pip install -e .[dev]
+
+# runtime only
+python -m pip install -e .
+
+# add the official `mcp` SDK server (optional extra)
+python -m pip install -e .[mcp-sdk]
+```
+
+Requires Python >= 3.10. The engines (`phi_redactor`, `compliance_checker`,
+`secops_simulator`, `readiness`) and the stdlib JSON-RPC bridge
+(`mcp_bridge.server`) are stdlib-only; only the official-SDK server needs the
+`mcp-sdk` extra.
+
 ## Quickstart
 
 ```powershell
@@ -14,6 +35,26 @@ python -m pip install -e . --dry-run --no-deps
 python -m pytest -q
 python -m mcp_bridge.client --help
 ```
+
+## Run the MCP server
+
+Two servers expose the same security tools (`redact_phi`, `compliance_scan`,
+`compliance_scan_file`, `list_standards`, `mask_text` / `restore_text`, …). The
+full tool table plus Claude Desktop / Cursor config is in
+[mcp_bridge/README.md](mcp_bridge/README.md).
+
+```powershell
+# stdlib-only JSON-RPC server — no third-party deps required
+python -m mcp_bridge.server
+
+# official-SDK server — requires the mcp-sdk extra
+python -m pip install -e .[mcp-sdk]
+phantom-secure-connector-mcp
+```
+
+Outbound MCP tool calls made through `mcp_bridge.client` are gated by PHI
+redaction, injection scanning, and an explicit tool allowlist (see
+[docs/SECURITY_BOUNDARY.md](docs/SECURITY_BOUNDARY.md)).
 
 Deterministic synthetic guardrail loop:
 
